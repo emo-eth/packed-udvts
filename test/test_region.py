@@ -1,10 +1,10 @@
 from unittest import TestCase
-from packed_udts.region import Region
+from packed_udvts.region import Region
 
 
 class TestRegion(TestCase):
     def test_region(self):
-        r = Region("Udt", "foo", 5, 14)
+        r = Region("foo", 5, 14)
         self.assertEqual(r.end_mask(), "0x1f")
         self.assertEqual(r.end_mask_name(), "FOO_END_MASK")
         self.assertEqual(
@@ -21,4 +21,4 @@ function setFoo(Udt self, uint256 value) internal pure returns (Udt updated) {{
         updated := or(masked, shl({r.offset_bits}, value))
     }}
 }}"""
-        self.assertEqual(r.setter(), setter_str)
+        self.assertEqual(r.setter("Udt"), setter_str)
