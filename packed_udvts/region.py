@@ -28,7 +28,7 @@ class Region:
         """Get the name of the mask for this member, which will clear all bits above "width_bits"
         It should return a string
         """
-        return f"{self.member.name.upper()}_END_MASK"
+        return f"_{self.member.width_bits}_BIT_END_MASK"
 
     @property
     def not_mask(self) -> str:
@@ -87,7 +87,7 @@ class Region:
         masked_lhs = f"and(self, {self.not_mask_name})"
         return f"""
 function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)} {self.member.shadowed_name}) internal pure returns ({udt_name} updated) {{
-    {self.typesafe_require if typesafe else ""}
+    {self.typesafe_require if typesafe and not self.member.custom_typestr else ""}
     assembly {{
         updated := or({masked_lhs}, {rhs})
     }}
