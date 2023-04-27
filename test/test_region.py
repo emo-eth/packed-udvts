@@ -4,6 +4,9 @@ from packed_udvts.member import Member
 
 
 class TestRegion(TestCase):
+    def setUp(self):
+        self.maxDiff = 6969
+
     def test_region_end_mask(self):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)
         r = Region(member=member, offset_bits=14)
@@ -28,10 +31,10 @@ class TestRegion(TestCase):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)
         r = Region(member=member, offset_bits=14)
         setter_str = f"""
-function setFoo(Udt self, uint8 value) internal pure returns (Udt updated) {{
-    require(value <= FOO_END_MASK, "foo value too large");
+function setFoo(Udt self, uint8 _foo) internal pure returns (Udt updated) {{
+    require(_foo <= FOO_END_MASK, "foo value too large");
     assembly {{
-        updated := or(and(self, FOO_NOT_MASK), shl({r.offset_bits_name}, value))
+        updated := or(and(self, FOO_NOT_MASK), shl({r.offset_bits_name}, _foo))
     }}
 }}"""
         self.assertEqual(r.setter("Udt"), setter_str)

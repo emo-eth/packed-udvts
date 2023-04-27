@@ -5,18 +5,54 @@ from dataclasses import dataclass
 from packed_udvts.util import to_title_case, to_camel_case
 from packed_udvts.constant_declaration import ConstantDeclaration
 
+VALID_LITERAL_VALUE_TYPES = Union[
+    Literal["uint256"],
+    Literal["bytes32"],
+    Literal["uint8"],
+    Literal["uint16"],
+    Literal["uint32"],
+    Literal["uint40"],
+    Literal["uint48"],
+    Literal["uint56"],
+    Literal["uint64"],
+    Literal["uint72"],
+    Literal["uint80"],
+    Literal["uint88"],
+    Literal["uint96"],
+    Literal["uint104"],
+    Literal["uint112"],
+    Literal["uint120"],
+    Literal["uint128"],
+    Literal["uint136"],
+    Literal["uint144"],
+    Literal["uint152"],
+    Literal["uint160"],
+    Literal["uint168"],
+    Literal["uint176"],
+    Literal["uint184"],
+    Literal["uint192"],
+    Literal["uint200"],
+    Literal["uint208"],
+    Literal["uint216"],
+    Literal["uint224"],
+    Literal["uint232"],
+    Literal["uint240"],
+    Literal["uint248"],
+    Literal["uint256"],
+]
+
 
 @dataclass
 class UserDefinedValueType:
     name: str
     regions: list[Region]
-    value_type: Union[Literal["uint256"], Literal["bytes32"]]
+    value_type: VALID_LITERAL_VALUE_TYPES
 
     def __init__(
         self,
         name: str,
         regions: list[Region],
-        value_type: Union[Literal["uint256"], Literal["bytes32"]],
+        value_type: VALID_LITERAL_VALUE_TYPES,
     ):
         assert len(regions) > 0, "UDVTs must have at least one region"
         assert value_type in ["uint256", "bytes32"], "UDVTs must be uint256 or bytes32"
@@ -28,7 +64,7 @@ class UserDefinedValueType:
     def from_members(
         name: str,
         members: list[Member],
-        value_type: Union[Literal["uint256"], Literal["bytes32"]],
+        value_type: VALID_LITERAL_VALUE_TYPES,
     ):
         regions = []
         offset = 0
@@ -37,6 +73,15 @@ class UserDefinedValueType:
             offset += m.width_bits
         assert offset <= 256, "Too many bits to pack into a single UDVT"
         return UserDefinedValueType(name=name, regions=regions, value_type=value_type)
+
+    @property
+    def width_bits(self):
+        """Get the width of this UDVT in bits"""
+        return (
+            sum(r.member.width_bits for r in self.regions)
+            if self.value_type != "bytes32"
+            else 256
+        )
 
     @property
     def type_declaration(self):
@@ -124,4 +169,4 @@ pragma solidity ^0.8.0;
 {self.using_declaration}
 
 {self.library_declaration(typesafe=typesafe)}
-    """
+"""

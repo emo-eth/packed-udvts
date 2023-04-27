@@ -1,6 +1,11 @@
+# to suppor TYPE_CHECKING
+from __future__ import annotations
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from packed_udvts.util import to_title_case
+
+if TYPE_CHECKING:
+    from packed_udvts.udvt import UserDefinedValueType
 
 
 @dataclass
@@ -14,6 +19,8 @@ class Member:
     bytesN: Optional[int] = None
     # if not bytesN, signed or unsigned
     signed: bool = False
+    # if a member is itself a UDVT, this is the name of the UDVT
+    custom_typestr: Optional[str] = None
 
     def __init__(
         self,
@@ -21,6 +28,7 @@ class Member:
         width_bits: int,
         bytesN: Optional[int] = None,
         signed: bool = False,
+        custom_typestr: Optional[str] = None,
     ):
         assert width_bits > 0, "width_bits must be positive"
         assert bytesN is None or bytesN > 0, "bytesN must be positive or None"
@@ -33,6 +41,19 @@ class Member:
         self.width_bits = width_bits
         self.bytesN = bytesN
         self.signed = signed
+        self.custom_typestr = custom_typestr
+
+    @staticmethod
+    def from_udvt(udvt: UserDefinedValueType, name: str) -> "Member":
+        """Create a new member from a UDVT"""
+        assert udvt.width_bits < 256, "Cannot create a member from a full-width UDVT"
+        return Member(
+            name=name,
+            width_bits=udvt.width_bits,
+            bytesN=None,  # never bytesN since only bytes32 is allowed which fails above assertion
+            signed=False,  # this library only allows unsigned uints for UDVTs
+            custom_typestr=udvt.name,
+        )
 
     @property
     def title(self) -> str:
@@ -80,6 +101,8 @@ class Member:
 
     def typestr(self, typesafe: bool) -> str:
         """Get the typestr of this region"""
+        if self.custom_typestr is not None:
+            return self.custom_typestr
         if typesafe:
             return self.safe_typestr
         return self.unsafe_typestr
