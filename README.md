@@ -18,6 +18,8 @@ class Member:
     bytesN: Optional[int] = None
     # if not bytesN, signed or unsigned; will throw if bytesN is set
     signed: bool = False
+    # if a member is itself a UDVT, this is the name of the UDVT
+    custom_typestr: Optional[str] = None
 ```
 
 # Region
