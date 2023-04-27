@@ -16,7 +16,7 @@ library UDVTType {
     uint256 constant FOO_END_MASK = 0xff;
     uint256 constant FOO_NOT_MASK = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00;
 
-    function createUDVT(int8 _foo, bytes4 _bar, uint72 _baz) internal pure returns (UDVT self) {
+    function createUDVT(int256 _foo, bytes32 _bar, uint256 _baz) internal pure returns (UDVT self) {
         assembly {
             self := _foo
             self := or(self, shl(BAR_OFFSET, shr(224, _bar)))
@@ -24,7 +24,7 @@ library UDVTType {
         }
     }
 
-    function unpackUDVT(UDVT self) internal pure returns (int8 _foo, bytes4 _bar, uint72 _baz) {
+    function unpackUDVT(UDVT self) internal pure returns (int256 _foo, bytes32 _bar, uint256 _baz) {
         assembly {
             _foo := signextend(0, and(self, FOO_END_MASK))
             _bar := shl(BAR_EXPANSION_BITS, and(shr(BAR_OFFSET, self), BAR_END_MASK))
@@ -32,48 +32,37 @@ library UDVTType {
         }
     }
 
-    function getFoo(UDVT self) internal pure returns (int8 _foo) {
+    function getFoo(UDVT self) internal pure returns (int256 _foo) {
         assembly {
             _foo := signextend(0, and(self, FOO_END_MASK))
         }
     }
 
-    function getBar(UDVT self) internal pure returns (bytes4 _bar) {
+    function getBar(UDVT self) internal pure returns (bytes32 _bar) {
         assembly {
             _bar := shl(BAR_EXPANSION_BITS, and(shr(BAR_OFFSET, self), BAR_END_MASK))
         }
     }
 
-    function getBaz(UDVT self) internal pure returns (uint72 _baz) {
+    function getBaz(UDVT self) internal pure returns (uint256 _baz) {
         assembly {
             _baz := and(shr(BAZ_OFFSET, self), BAZ_END_MASK)
         }
     }
 
-    function setFoo(UDVT self, int8 _foo) internal pure returns (UDVT updated) {
-        uint256 cast;
-        assembly {
-            cast := and(_foo, FOO_END_MASK)
-        }
-        require(cast <= FOO_END_MASK, "foo value too large");
+    function setFoo(UDVT self, int256 _foo) internal pure returns (UDVT updated) {
         assembly {
             updated := or(and(self, FOO_NOT_MASK), and(_foo, FOO_END_MASK))
         }
     }
 
-    function setBar(UDVT self, bytes4 _bar) internal pure returns (UDVT updated) {
-        uint256 cast;
-        assembly {
-            cast := shr(224, _bar)
-        }
-        require(true, "bar value too large");
+    function setBar(UDVT self, bytes32 _bar) internal pure returns (UDVT updated) {
         assembly {
             updated := or(and(self, BAR_NOT_MASK), shl(BAR_OFFSET, shr(BAR_EXPANSION_BITS, _bar)))
         }
     }
 
-    function setBaz(UDVT self, uint72 _baz) internal pure returns (UDVT updated) {
-        require(_baz <= BAZ_END_MASK, "baz value too large");
+    function setBaz(UDVT self, uint256 _baz) internal pure returns (UDVT updated) {
         assembly {
             updated := or(and(self, BAZ_NOT_MASK), shl(BAZ_OFFSET, _baz))
         }

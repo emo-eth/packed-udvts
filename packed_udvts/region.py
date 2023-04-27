@@ -80,8 +80,10 @@ class Region:
                 )
             else:
                 value_expression = self.member.shadowed_name
-
-        rhs = f"shl({self.offset_bits_name}, {value_expression})"
+        if self.offset_bits:
+            rhs = f"shl({self.offset_bits_name}, {value_expression})"
+        else:
+            rhs = value_expression
         masked_lhs = f"and(self, {self.not_mask_name})"
         return f"""
 function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)} {self.member.shadowed_name}) internal pure returns ({udt_name} updated) {{
@@ -157,7 +159,9 @@ function get{self.member.title}({udt_name} self) internal pure returns ({self.me
                 ),
                 ConstantDeclaration(
                     name=self.offset_bits_name, value=str(self.offset_bits)
-                ),
+                )
+                if self.offset_bits
+                else None,
                 ConstantDeclaration(
                     name=self.expansion_bits_name,
                     value=str(self.member.num_expansion_bits),

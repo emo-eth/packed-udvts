@@ -10,4 +10,6 @@ u = UserDefinedValueType.from_members(
     name="UDVT", members=members, value_type="uint256"
 )
 
+# typesafe=True by default
 print(u.render_file())
+# print(u.render_file(typesafe=False))
