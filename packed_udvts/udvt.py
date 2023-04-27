@@ -2,9 +2,12 @@ from packed_udvts.member import Member
 from packed_udvts.region import Region
 from typing import Union, Literal
 from dataclasses import dataclass
-from packed_udvts.util import to_title_case, to_camel_case
 from packed_udvts.constant_declaration import ConstantDeclaration
+from math import ceil, log2
+from typing import Optional
 
+# for packed UDVTs, only allow bytes32 and unsigned integers
+# bytesN are left-aligned, so right-aligned uints are preferable
 VALID_LITERAL_VALUE_TYPES = Union[
     Literal["uint256"],
     Literal["bytes32"],
@@ -74,6 +77,36 @@ class UserDefinedValueType:
         assert offset <= 256, "Too many bits to pack into a single UDVT"
         return UserDefinedValueType(name=name, regions=regions, value_type=value_type)
 
+    @staticmethod
+    def packed_array_of(
+        u: Union["UserDefinedValueType", Member], max_length: Optional[int] = None
+    ) -> "UserDefinedValueType":
+        # get the total number that can be packed into 256 bits
+        number_to_pack = max_length or 256 // u.width_bits
+        # get the number of remaining bits after packing
+        remaining_bits = 256 - (u.width_bits * number_to_pack)
+        # ensure there are enough remaining bits to pack the length; calculate the number of bits needed to pack the length
+        length_width_bits = ceil(log2(number_to_pack))
+        # decrement number_to_pack until length can fit into remaining bits
+        while remaining_bits < length_width_bits:
+            number_to_pack -= 1
+            length_width_bits = ceil(log2(number_to_pack))
+            remaining_bits = 256 - (u.width_bits * number_to_pack)
+
+        # create first member of array UDVT, which is the length
+        members = [Member(name="length", width_bits=length_width_bits, signed=False)]
+        # extend with the packed members, each named index0, index1, etc.
+        members.extend(
+            [
+                Member(name=f"index{i}", width_bits=u.width_bits, custom_typestr=u.name)
+                for i in range(number_to_pack)
+            ]
+        )
+        # create the array UDVT
+        return UserDefinedValueType.from_members(
+            name=f"{u.name}Array", members=members, value_type="uint256"
+        )
+
     @property
     def width_bits(self):
         """Get the width of this UDVT in bits"""
@@ -94,7 +127,8 @@ class UserDefinedValueType:
         return f"using {self.name}Type for {self.name} global;"
 
     def create_declaration(self, typesafe: bool = True):
-        """Get the declaration for this UDVT"""
+        """Get the declaration for this UDVT
+        TODO: investigate the effect ordering of parameters has on bytecode"""
         initial = f"self := {self.regions[0].member.shadowed_name}"
         other_regions = []
         for r in self.regions[1:]:
@@ -120,9 +154,9 @@ function create{self.name}({', '.join(m.get_shadowed_declaration(typesafe=typesa
 }}"""
 
     def unpack_declaration(self, typesafe: bool = True):
-        """Get the unpack declaration for this UDVT"""
+        """Get the unpack declaration for this UDVT
+        TODO: investigate the effect ordering of return values has on bytecode"""
         assignments = []
-        total_offset_bits = 0
         for r in self.regions:
             assignments.append(r._shift_and_unmask())
         assignment_strs = "\n        ".join(assignments)
