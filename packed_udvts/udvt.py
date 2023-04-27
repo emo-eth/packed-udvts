@@ -52,22 +52,26 @@ class UserDefinedValueType:
         initial = f"self := {self.regions[0].member.shadowed_name}"
         other_regions = []
         for r in self.regions[1:]:
-            if r.member.bytesN is not None:
+            if r.member.bytesN is None:
                 expression_to_shl_then_or = r.member.shadowed_name
             else:
+                assert (
+                    r.member.num_expansion_bits is not None
+                ), "Member must have num_expansion_bits if not bytesN"
                 expression_to_shl_then_or = (
                     f"shr({r.member.num_expansion_bits}, {r.member.shadowed_name})"
                 )
-            other_regions.append(f"shl({r.offset_bits}, {expression_to_shl_then_or})")
-        remaining = "\n".join(other_regions)
+            other_regions.append(
+                f"self := or(self, shl({r.offset_bits}, {expression_to_shl_then_or}))"
+            )
+        remaining = "\n        ".join(other_regions)
         return f"""
 function create{self.name}({', '.join(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)}) internal pure returns ({self.name} self) {{
     assembly {{
         {initial}
-        {remaining}  
+        {remaining}
     }}
-}}
-"""
+}}"""
 
     def unpack_declaration(self, typesafe: bool = True):
         """Get the unpack declaration for this UDVT"""
@@ -79,11 +83,10 @@ function create{self.name}({', '.join(m.get_shadowed_declaration(typesafe=typesa
             assignments.append(
                 r._shift_and_unmask(total_offset_bits, r.member.num_expansion_bits)
             )
-
+        assignment_strs = "\n        ".join(assignments)
         return f"""
 function unpack{self.name}({self.name} self) internal pure returns ({', '.join(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)}) {{
     assembly {{
-        
+        {assignment_strs}
     }}
-}}
-        """
+}}"""

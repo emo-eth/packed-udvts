@@ -79,26 +79,23 @@ function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)}
         return f"""
 function get{self.member.title}({udt_name} self) internal pure returns ({self.member.typestr(typesafe)} {self.member.shadowed_name}) {{
     assembly {{
-{self._shift_and_unmask(self.offset_bits,self.member.num_expansion_bits)}
+        {self._shift_and_unmask(self.offset_bits,self.member.num_expansion_bits)}
     }}
 }}"""
 
     def _shift_and_unmask(self, offset_bits: int, expansion_bits: Optional[int]) -> str:
         """Get the assembly for shifting and unmasking this member"""
         if offset_bits == 0:
-            shift = "// no shift necessary"
+            expression_to_mask = "self"
         else:
-            shift = f"self := shr({offset_bits}, self)"
-        if not expansion_bits:
+            expression_to_mask = f"shr({offset_bits}, self)"
+        masked_expression = f"and({expression_to_mask}, {self.end_mask_name})"
+        if expansion_bits:
+            rhs = f"shl({expansion_bits}, {masked_expression})"
+        else:
             if self.member.signed and self.member.width_bits != 256:
-                param = self.member.whole_bytes - 1
-                expansion = f"{self.member.shadowed_name} := signextend({param}, {self.member.shadowed_name})"
+                rhs = f"signextend({self.member.whole_bytes - 1}, {masked_expression})"
             else:
-                expansion = "// no expansion or sign extension necessary"
-        else:
-            expansion = f"{self.member.shadowed_name} := shl({expansion_bits}, {self.member.shadowed_name})"
-        return f"""
-        {shift}
-        {self.member.shadowed_name} := and(self, {self.end_mask_name})
-        {expansion}
-"""
+                rhs = masked_expression
+        assignment = f"{self.member.shadowed_name} := {rhs}"
+        return f"""{assignment}"""

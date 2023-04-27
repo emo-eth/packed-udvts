@@ -44,11 +44,7 @@ function setFoo(Udt self, uint8 value) internal pure returns (Udt updated) {{
         getter_str = f"""
 function getFoo(Udt self) internal pure returns (uint8 _foo) {{
     assembly {{
-
-        self := shr({r.offset_bits}, self)
-        _foo := and(self, FOO_END_MASK)
-        // no expansion or sign extension necessary
-
+        _foo := and(shr({r.offset_bits}, self), FOO_END_MASK)
     }}
 }}"""
         self.assertEqual(r.getter("Udt"), getter_str)
@@ -57,11 +53,7 @@ function getFoo(Udt self) internal pure returns (uint8 _foo) {{
         getter_str = f"""
 function getFoo(Udt self) internal pure returns (uint256 _foo) {{
     assembly {{
-
-        // no shift necessary
         _foo := and(self, FOO_END_MASK)
-        // no expansion or sign extension necessary
-
     }}
 }}"""
         self.assertEqual(r.getter("Udt", typesafe=False), getter_str)
@@ -71,11 +63,7 @@ function getFoo(Udt self) internal pure returns (uint256 _foo) {{
         getter_str = f"""
 function getFoo(Udt self) internal pure returns (bytes4 _foo) {{
     assembly {{
-
-        // no shift necessary
-        _foo := and(self, FOO_END_MASK)
-        _foo := shl(224, _foo)
-
+        _foo := shl(224, and(self, FOO_END_MASK))
     }}
 }}"""
         self.assertEqual(r.getter("Udt"), getter_str)
@@ -85,11 +73,7 @@ function getFoo(Udt self) internal pure returns (bytes4 _foo) {{
         getter_str = f"""
 function getFoo(Udt self) internal pure returns (int8 _foo) {{
     assembly {{
-
-        // no shift necessary
-        _foo := and(self, FOO_END_MASK)
-        _foo := signextend(0, _foo)
-
+        _foo := signextend(0, and(self, FOO_END_MASK))
     }}
 }}"""
         self.assertEqual(r.getter("Udt"), getter_str)
@@ -98,11 +82,7 @@ function getFoo(Udt self) internal pure returns (int8 _foo) {{
         getter_str = f"""
 function getFoo(Udt self) internal pure returns (int256 _foo) {{
     assembly {{
-
-        // no shift necessary
-        _foo := and(self, FOO_END_MASK)
-        _foo := signextend(0, _foo)
-
+        _foo := signextend(0, and(self, FOO_END_MASK))
     }}
 }}"""
         self.assertEqual(r.getter("Udt", typesafe=False), getter_str)
