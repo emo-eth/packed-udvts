@@ -31,9 +31,7 @@ class TestRegion(TestCase):
 function setFoo(Udt self, uint8 value) internal pure returns (Udt updated) {{
     require(value <= FOO_END_MASK, "foo value too large");
     assembly {{
-        // no compression necessary
-        let masked := and(self, FOO_NOT_MASK)
-        updated := or(masked, shl({r.offset_bits}, value))
+        updated := or(and(self, FOO_NOT_MASK), shl({r.offset_bits_name}, value))
     }}
 }}"""
         self.assertEqual(r.setter("Udt"), setter_str)
@@ -44,7 +42,7 @@ function setFoo(Udt self, uint8 value) internal pure returns (Udt updated) {{
         getter_str = f"""
 function getFoo(Udt self) internal pure returns (uint8 _foo) {{
     assembly {{
-        _foo := and(shr({r.offset_bits}, self), FOO_END_MASK)
+        _foo := and(shr({r.offset_bits_name}, self), FOO_END_MASK)
     }}
 }}"""
         self.assertEqual(r.getter("Udt"), getter_str)
@@ -63,7 +61,7 @@ function getFoo(Udt self) internal pure returns (uint256 _foo) {{
         getter_str = f"""
 function getFoo(Udt self) internal pure returns (bytes4 _foo) {{
     assembly {{
-        _foo := shl(224, and(self, FOO_END_MASK))
+        _foo := shl(FOO_EXPANSION_BITS, and(self, FOO_END_MASK))
     }}
 }}"""
         self.assertEqual(r.getter("Udt"), getter_str)

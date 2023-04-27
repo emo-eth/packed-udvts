@@ -46,8 +46,8 @@ class TestUserDefinedValueType(TestCase):
 function createUDVT(int8 _foo, bytes4 _bar, uint72 _baz) internal pure returns (UDVT self) {{
     assembly {{
         self := _foo
-        self := or(self, shl(8, shr(224, _bar)))
-        self := or(self, shl(39, _baz))
+        self := or(self, shl(BAR_OFFSET, shr(224, _bar)))
+        self := or(self, shl(BAZ_OFFSET, _baz))
     }}
 }}"""
         self.assertEqual(self.u.create_declaration(typesafe=True), create_declaration)
@@ -57,8 +57,12 @@ function createUDVT(int8 _foo, bytes4 _bar, uint72 _baz) internal pure returns (
 function unpackUDVT(UDVT self) internal pure returns (int8 _foo, bytes4 _bar, uint72 _baz) {{
     assembly {{
         _foo := signextend(0, and(self, FOO_END_MASK))
-        _bar := shl(224, and(shr(8, self), BAR_END_MASK))
-        _baz := and(shr(39, self), BAZ_END_MASK)
+        _bar := shl(BAR_EXPANSION_BITS, and(shr(BAR_OFFSET, self), BAR_END_MASK))
+        _baz := and(shr(BAZ_OFFSET, self), BAZ_END_MASK)
     }}
 }}"""
         self.assertEqual(self.u.unpack_declaration(typesafe=True), create_declaration)
+
+    def test_library_declaration(self):
+        library_declaration = f""""""
+        self.assertEqual(self.u.library_declaration(typesafe=True), library_declaration)

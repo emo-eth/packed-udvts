@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 from packed_udvts.member import Member
+from packed_udvts.constant_declaration import ConstantDeclaration
 
 
 @dataclass
@@ -54,6 +55,13 @@ class Region:
         """Get the name of the offset for this member; it should return a string"""
         return f"{self.member.name.upper()}_OFFSET"
 
+    @property
+    def expansion_bits_name(self) -> Optional[str]:
+        """Get the name of the expansion bits for this member; it should return a string"""
+        if self.member.num_expansion_bits is None:
+            return None
+        return f"{self.member.name.upper()}_EXPANSION_BITS"
+
     def get_shadowed_declaration(self, typesafe: bool = True):
         """Get the shadowed declaration for this member"""
         return f"{self.member.typestr(typesafe)} {self.member.shadowed_name}"
@@ -61,16 +69,21 @@ class Region:
     def setter(self, udt_name: str, typesafe: bool = True) -> str:
         """Get the function body for the setter for this member"""
         if self.member.num_expansion_bits:
-            compression = f"value := shr({self.member.num_expansion_bits}, value)"
+            value_expression = f"shr({self.expansion_bits_name}, value)"
         else:
-            compression = "// no compression necessary"
+            if self.member.signed and self.member.width_bits != 256:
+                # mask signed values and use signextend later
+                value_expression = f"and(value, {self.end_mask_name})"
+            else:
+                value_expression = "value"
+
+        rhs = f"shl({self.offset_bits_name}, {value_expression})"
+        masked_lhs = f"and(self, {self.not_mask_name})"
         return f"""
 function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)} value) internal pure returns ({udt_name} updated) {{
     require(value <= {self.end_mask_name}, "{self.member.name} value too large");
     assembly {{
-        {compression}
-        let masked := and(self, {self.not_mask_name})
-        updated := or(masked, shl({self.offset_bits}, value))
+        updated := or({masked_lhs}, {rhs})
     }}
 }}"""
 
@@ -79,19 +92,19 @@ function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)}
         return f"""
 function get{self.member.title}({udt_name} self) internal pure returns ({self.member.typestr(typesafe)} {self.member.shadowed_name}) {{
     assembly {{
-        {self._shift_and_unmask(self.offset_bits,self.member.num_expansion_bits)}
+        {self._shift_and_unmask()}
     }}
 }}"""
 
-    def _shift_and_unmask(self, offset_bits: int, expansion_bits: Optional[int]) -> str:
+    def _shift_and_unmask(self) -> str:
         """Get the assembly for shifting and unmasking this member"""
-        if offset_bits == 0:
+        if self.offset_bits == 0:
             expression_to_mask = "self"
         else:
-            expression_to_mask = f"shr({offset_bits}, self)"
+            expression_to_mask = f"shr({self.offset_bits_name}, self)"
         masked_expression = f"and({expression_to_mask}, {self.end_mask_name})"
-        if expansion_bits:
-            rhs = f"shl({expansion_bits}, {masked_expression})"
+        if self.member.num_expansion_bits:
+            rhs = f"shl({self.expansion_bits_name}, {masked_expression})"
         else:
             if self.member.signed and self.member.width_bits != 256:
                 rhs = f"signextend({self.member.whole_bytes - 1}, {masked_expression})"
@@ -99,3 +112,26 @@ function get{self.member.title}({udt_name} self) internal pure returns ({self.me
                 rhs = masked_expression
         assignment = f"{self.member.shadowed_name} := {rhs}"
         return f"""{assignment}"""
+
+    def get_constant_declarations(self) -> list[ConstantDeclaration]:
+        """Get the constant declarations for this member"""
+        return [
+            x
+            for x in [
+                ConstantDeclaration(name=self.end_mask_name, value=self.end_mask),
+                ConstantDeclaration(
+                    name=self.not_mask_name,
+                    value=self.not_mask,
+                ),
+                ConstantDeclaration(
+                    name=self.offset_bits_name, value=str(self.offset_bits)
+                ),
+                ConstantDeclaration(
+                    name=self.expansion_bits_name,
+                    value=str(self.member.num_expansion_bits),
+                )
+                if self.expansion_bits_name
+                else None,
+            ]
+            if x
+        ]

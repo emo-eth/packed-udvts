@@ -3,6 +3,7 @@ from packed_udvts.region import Region
 from typing import Union, Literal
 from dataclasses import dataclass
 from packed_udvts.util import to_title_case, to_camel_case
+from packed_udvts.constant_declaration import ConstantDeclaration
 
 
 @dataclass
@@ -62,7 +63,7 @@ class UserDefinedValueType:
                     f"shr({r.member.num_expansion_bits}, {r.member.shadowed_name})"
                 )
             other_regions.append(
-                f"self := or(self, shl({r.offset_bits}, {expression_to_shl_then_or}))"
+                f"self := or(self, shl({r.offset_bits_name}, {expression_to_shl_then_or}))"
             )
         remaining = "\n        ".join(other_regions)
         return f"""
@@ -78,15 +79,37 @@ function create{self.name}({', '.join(m.get_shadowed_declaration(typesafe=typesa
         assignments = []
         total_offset_bits = 0
         for r in self.regions:
-            adjusted_offset_bits = r.offset_bits - total_offset_bits
-            total_offset_bits += adjusted_offset_bits
-            assignments.append(
-                r._shift_and_unmask(total_offset_bits, r.member.num_expansion_bits)
-            )
+            assignments.append(r._shift_and_unmask())
         assignment_strs = "\n        ".join(assignments)
         return f"""
 function unpack{self.name}({self.name} self) internal pure returns ({', '.join(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)}) {{
     assembly {{
         {assignment_strs}
     }}
+}}"""
+
+    def library_declaration(self, typesafe: bool = True):
+        """Get the library declaration for this UDVT"""
+        constants_declarations: list[ConstantDeclaration] = []
+        for r in self.regions:
+            constants_declarations.extend(r.get_constant_declarations())
+        constants_set = set(constants_declarations)
+        constants_str = "\n    ".join(sorted(x.render() for x in constants_set))
+        getters = "\n".join(
+            x.getter(udt_name=self.name, typesafe=typesafe) for x in self.regions
+        )
+        setters = "\n".join(
+            x.setter(udt_name=self.name, typesafe=typesafe) for x in self.regions
+        )
+        return f"""
+library {self.name}Type {{
+    {constants_str}
+
+    {self.create_declaration(typesafe=typesafe)}
+
+    {self.unpack_declaration(typesafe=typesafe)}
+
+    {getters}
+
+    {setters}
 }}"""
