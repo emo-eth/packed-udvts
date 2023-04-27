@@ -4,14 +4,13 @@ from packed_udvts.region import Region
 from packed_udvts.member import Member
 
 foo_member = Member(name="foo", width_bits=8, bytesN=None, signed=True)
-foo_region = Region(member=foo_member, offset_bits=0)
 bar_member = Member(name="bar", width_bits=31, bytesN=4, signed=False)
-bar_region = Region(member=bar_member, offset_bits=8)
 baz_member = Member(name="baz", width_bits=69, bytesN=None, signed=False)
-baz_region = Region(member=baz_member, offset_bits=39)
-u = UserDefinedValueType(
-    name="UDVT", regions=[foo_region, bar_region], value_type="uint256"
+members = [foo_member, bar_member, baz_member]
+u = UserDefinedValueType.from_members(
+    name="UDVT", members=members, value_type="uint256"
 )
+foo_region, bar_region, baz_region = u.regions
 
 
 class TestUserDefinedValueType(TestCase):
