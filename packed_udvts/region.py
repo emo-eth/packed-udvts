@@ -69,23 +69,55 @@ class Region:
     def setter(self, udt_name: str, typesafe: bool = True) -> str:
         """Get the function body for the setter for this member"""
         if self.member.num_expansion_bits:
-            value_expression = f"shr({self.expansion_bits_name}, value)"
+            value_expression = (
+                f"shr({self.expansion_bits_name}, {self.member.shadowed_name})"
+            )
         else:
             if self.member.signed and self.member.width_bits != 256:
                 # mask signed values and use signextend later
-                value_expression = f"and(value, {self.end_mask_name})"
+                value_expression = (
+                    f"and({self.member.shadowed_name}, {self.end_mask_name})"
+                )
             else:
-                value_expression = "value"
+                value_expression = self.member.shadowed_name
 
         rhs = f"shl({self.offset_bits_name}, {value_expression})"
         masked_lhs = f"and(self, {self.not_mask_name})"
         return f"""
-function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)} value) internal pure returns ({udt_name} updated) {{
-    require(value <= {self.end_mask_name}, "{self.member.name} value too large");
+function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)} {self.member.shadowed_name}) internal pure returns ({udt_name} updated) {{
+    {self.typesafe_require if typesafe else ""}
     assembly {{
         updated := or({masked_lhs}, {rhs})
     }}
 }}"""
+
+    @property
+    def typesafe_require(self) -> str:
+        """Get the require statement for this member"""
+        # TODO: very inefficient; optimize by reusing masked values
+        if self.member.bytesN is not None:
+            if self.member.num_expansion_bits:
+                preamble = f"""
+    uint256 cast;
+    assembly {{
+        cast := shr({self.member.num_expansion_bits}, {self.member.shadowed_name})
+    }}
+    """
+            else:
+                preamble = ""
+            lhs = "true"
+        elif self.member.signed:
+            preamble = f"""
+uint256 cast;
+assembly {{
+    cast := and({self.member.shadowed_name}, {self.end_mask_name})
+}}
+"""
+            lhs = f"cast <= {self.end_mask_name}"
+        else:
+            preamble = ""
+            lhs = f"{self.member.shadowed_name} <= {self.end_mask_name}"
+        return f'{preamble}require({lhs}, "{self.member.name} value too large");'
 
     def getter(self, udt_name: str, typesafe: bool = True) -> str:
         """Get the function body for the getter for this member"""

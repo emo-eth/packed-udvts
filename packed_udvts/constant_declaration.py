@@ -7,4 +7,4 @@ class ConstantDeclaration:
     value: str
 
     def render(self) -> str:
-        return f"constant {self.name} = {self.value};"
+        return f"uint256 constant {self.name} = {self.value};"

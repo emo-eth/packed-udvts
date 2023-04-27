@@ -113,3 +113,15 @@ library {self.name}Type {{
 
     {setters}
 }}"""
+
+    def render_file(self, typesafe: bool = True):
+        """Render the file for this UDVT"""
+        return f"""// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+{self.type_declaration}
+
+{self.using_declaration}
+
+{self.library_declaration(typesafe=typesafe)}
+    """

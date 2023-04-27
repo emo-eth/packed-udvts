@@ -1,6 +1,5 @@
 from unittest import TestCase
 from packed_udvts.udvt import UserDefinedValueType
-from packed_udvts.region import Region
 from packed_udvts.member import Member
 
 foo_member = Member(name="foo", width_bits=8, bytesN=None, signed=True)
@@ -65,3 +64,10 @@ function unpackUDVT(UDVT self) internal pure returns (int8 _foo, bytes4 _bar, ui
     def test_library_declaration(self):
         library_declaration = f""""""
         self.assertEqual(self.u.library_declaration(typesafe=True), library_declaration)
+
+    def test_render_file(self):
+        render_file = f"""pragma solidity ^0.8.0;"""
+        self.assertEqual(self.u.render_file(typesafe=True), render_file)
+
+
+print(u.render_file(typesafe=True))
