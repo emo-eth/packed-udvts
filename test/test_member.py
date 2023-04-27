@@ -34,13 +34,15 @@ class TestMember(TestCase):
         member = Member(name="foo", width_bits=5, bytesN=2, signed=False)
         self.assertEqual(member.safe_typestr, "bytes2")
 
-    def test_whole_bytes(self):
+    def test_ceil_bytes(self):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)
-        self.assertEqual(member.whole_bytes, 1)
+        self.assertEqual(member.ceil_bytes, 1)
+        member = Member(name="foo", width_bits=9, bytesN=None, signed=False)
+        self.assertEqual(member.ceil_bytes, 2)
 
-    def test_whole_bytes_bytes(self):
+    def test_ceil_bytes_bytes(self):
         member = Member(name="foo", width_bits=5, bytesN=2, signed=False)
-        self.assertEqual(member.whole_bytes, 1)
+        self.assertEqual(member.ceil_bytes, 1)
 
     def test_unsafe_typestr(self):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)

@@ -141,7 +141,7 @@ function get{self.member.title}({udt_name} self) internal pure returns ({self.me
             rhs = f"shl({self.expansion_bits_name}, {masked_expression})"
         else:
             if self.member.signed and self.member.width_bits != 256:
-                rhs = f"signextend({self.member.whole_bytes - 1}, {masked_expression})"
+                rhs = f"signextend({self.member.ceil_bytes - 1}, {masked_expression})"
             else:
                 rhs = masked_expression
         assignment = f"{self.member.shadowed_name} := {rhs}"

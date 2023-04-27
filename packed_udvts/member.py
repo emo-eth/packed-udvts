@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
 from packed_udvts.util import to_title_case
+from math import ceil
 
 if TYPE_CHECKING:
     from packed_udvts.udvt import UserDefinedValueType
@@ -79,9 +80,9 @@ class Member:
         return f"bytes{self.bytesN}"
 
     @property
-    def whole_bytes(self) -> int:
-        """Get the number of whole bytes in this region"""
-        return self.width_bits // 8 or 1
+    def ceil_bytes(self) -> int:
+        """Get the number of whole bytes necessary to represent this member"""
+        return ceil(self.width_bits / 8)
 
     @property
     def unsafe_typestr(self) -> str:
