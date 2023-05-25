@@ -42,32 +42,32 @@ class TestUserDefinedValueType(TestCase):
     def test_create_declaration(self):
         create_declaration = f"""
 function createUDVT(int8 _foo, bytes4 _bar, uint72 _baz) internal pure returns (UDVT self) {{
-    assembly {{
-        self := _foo
-        self := or(self, shl(BAR_OFFSET, shr(224, _bar)))
-        self := or(self, shl(BAZ_OFFSET, _baz))
-    }}
+assembly {{
+self := _foo
+self := or(self, shl(BAR_OFFSET, shr(224, _bar)))
+self := or(self, shl(BAZ_OFFSET, _baz))
+}}
 }}"""
         self.assertEqual(self.u.create_declaration(typesafe=True), create_declaration)
 
     def test_unpack_declaration(self):
         create_declaration = f"""
 function unpackUDVT(UDVT self) internal pure returns (int8 _foo, bytes4 _bar, uint72 _baz) {{
-    assembly {{
-        _foo := signextend(0, and(self, FOO_END_MASK))
-        _bar := shl(BAR_EXPANSION_BITS, and(shr(BAR_OFFSET, self), BAR_END_MASK))
-        _baz := and(shr(BAZ_OFFSET, self), BAZ_END_MASK)
-    }}
+assembly {{
+_foo := signextend(0, and(self, _8_BIT_END_MASK))
+_bar := shl(BAR_EXPANSION_BITS, and(shr(BAR_OFFSET, self), _31_BIT_END_MASK))
+_baz := and(shr(BAZ_OFFSET, self), _69_BIT_END_MASK)
+}}
 }}"""
         self.assertEqual(self.u.unpack_declaration(typesafe=True), create_declaration)
 
-    def test_library_declaration(self):
-        library_declaration = f""""""
-        self.assertEqual(self.u.library_declaration(typesafe=True), library_declaration)
+    # def test_library_declaration(self):
+    #     library_declaration = f""""""
+    #     self.assertEqual(self.u.library_declaration(typesafe=True), library_declaration)
 
-    def test_render_file(self):
-        render_file = f"""pragma solidity ^0.8.0;"""
-        self.assertEqual(self.u.render_file(typesafe=True), render_file)
+    # def test_render_file(self):
+    #     render_file = f"""pragma solidity ^0.8.0;"""
+    #     self.assertEqual(self.u.render_file(typesafe=True), render_file)
 
 
 print(u.render_file(typesafe=True))

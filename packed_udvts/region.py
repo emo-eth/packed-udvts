@@ -87,10 +87,10 @@ class Region:
         masked_lhs = f"and(self, {self.not_mask_name})"
         return f"""
 function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)} {self.member.shadowed_name}) internal pure returns ({udt_name} updated) {{
-    {self.typesafe_require if typesafe and not self.member.custom_typestr else ""}
-    assembly {{
-        updated := or({masked_lhs}, {rhs})
-    }}
+{self.typesafe_require if typesafe and not self.member.custom_typestr else ""}
+assembly {{
+updated := or({masked_lhs}, {rhs})
+}}
 }}"""
 
     @property
@@ -100,10 +100,10 @@ function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)}
         if self.member.bytesN is not None:
             if self.member.num_expansion_bits:
                 preamble = f"""
-    uint256 cast;
-    assembly {{
-        cast := shr({self.member.num_expansion_bits}, {self.member.shadowed_name})
-    }}
+uint256 cast;
+assembly {{
+cast := shr({self.member.num_expansion_bits}, {self.member.shadowed_name})
+}}
     """
             else:
                 preamble = ""
@@ -112,7 +112,7 @@ function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)}
             preamble = f"""
 uint256 cast;
 assembly {{
-    cast := and({self.member.shadowed_name}, {self.end_mask_name})
+cast := and({self.member.shadowed_name}, {self.end_mask_name})
 }}
 """
             lhs = f"cast <= {self.end_mask_name}"
@@ -125,9 +125,9 @@ assembly {{
         """Get the function body for the getter for this member"""
         return f"""
 function get{self.member.title}({udt_name} self) internal pure returns ({self.member.typestr(typesafe)} {self.member.shadowed_name}) {{
-    assembly {{
-        {self._shift_and_unmask()}
-    }}
+assembly {{
+{self._shift_and_unmask()}
+}}
 }}"""
 
     def _shift_and_unmask(self) -> str:

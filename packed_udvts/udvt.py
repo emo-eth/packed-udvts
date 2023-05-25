@@ -144,13 +144,13 @@ class UserDefinedValueType:
             other_regions.append(
                 f"self := or(self, shl({r.offset_bits_name}, {expression_to_shl_then_or}))"
             )
-        remaining = "\n        ".join(other_regions)
+        remaining = "\n".join(other_regions)
         return f"""
 function create{self.name}({', '.join(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)}) internal pure returns ({self.name} self) {{
-    assembly {{
-        {initial}
-        {remaining}
-    }}
+assembly {{
+{initial}
+{remaining}
+}}
 }}"""
 
     def unpack_declaration(self, typesafe: bool = True):
@@ -159,12 +159,12 @@ function create{self.name}({', '.join(m.get_shadowed_declaration(typesafe=typesa
         assignments = []
         for r in self.regions:
             assignments.append(r._shift_and_unmask())
-        assignment_strs = "\n        ".join(assignments)
+        assignment_strs = "\n".join(assignments)
         return f"""
 function unpack{self.name}({self.name} self) internal pure returns ({', '.join(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)}) {{
-    assembly {{
-        {assignment_strs}
-    }}
+assembly {{
+{assignment_strs}
+}}
 }}"""
 
     def library_declaration(self, typesafe: bool = True):
@@ -173,7 +173,7 @@ function unpack{self.name}({self.name} self) internal pure returns ({', '.join(m
         for r in self.regions:
             constants_declarations.extend(r.get_constant_declarations())
         constants_set = set(constants_declarations)
-        constants_str = "\n    ".join(sorted(x.render() for x in constants_set))
+        constants_str = "\n".join(sorted(x.render() for x in constants_set))
         getters = "\n".join(
             x.getter(udt_name=self.name, typesafe=typesafe) for x in self.regions
         )
@@ -182,15 +182,15 @@ function unpack{self.name}({self.name} self) internal pure returns ({', '.join(m
         )
         return f"""
 library {self.name}Type {{
-    {constants_str}
+{constants_str}
 
-    {self.create_declaration(typesafe=typesafe)}
+{self.create_declaration(typesafe=typesafe)}
 
-    {self.unpack_declaration(typesafe=typesafe)}
+{self.unpack_declaration(typesafe=typesafe)}
 
-    {getters}
+{getters}
 
-    {setters}
+{setters}
 }}"""
 
     def render_file(self, typesafe: bool = True):
