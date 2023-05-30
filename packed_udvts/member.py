@@ -92,6 +92,16 @@ class Member:
         return f"bytes32"
 
     @property
+    def declaration(self) -> str:
+        """Get the declaration of this member"""
+        return f"{self.safe_typestr} {self.name}"
+
+    @property
+    def shadowed_declaration(self) -> str:
+        """Get the shadowed declaration of this member"""
+        return f"{self.safe_typestr} {self.shadowed_name}"
+
+    @property
     def num_expansion_bits(self) -> Optional[int]:
         """Get the number of bits to expand this region by, if a bytesN type"""
         if self.bytesN is None:
@@ -107,3 +117,39 @@ class Member:
         if typesafe:
             return self.safe_typestr
         return self.unsafe_typestr
+
+    def get_lower_bound(self) -> int:
+        """Get the lower bound of this member"""
+        if self.bytesN:
+            raise ValueError("Cannot get lower bound of bytesN member")
+        if not self.signed:
+            return 0
+        else:
+            return -1 * (2 ** (self.width_bits - 1))
+
+    def get_upper_bound(self) -> int:
+        """Get the upper bound of this member"""
+        if self.bytesN:
+            raise ValueError("Cannot get upper bound of bytesN member")
+        if not self.signed:
+            return 2**self.width_bits - 1
+        else:
+            return 2 ** (self.width_bits - 1) - 1
+
+    def get_truncated_bytesN_mask(self):
+        """Get the mask to truncate bytesN members"""
+        if self.bytesN is None:
+            raise ValueError("Cannot get truncated bytesN mask of non-bytesN member")
+        max_numeric_value = 2 ** (self.width_bits) - 1
+        # shift upper_mask to the left by the number of expansion bits
+        return max_numeric_value << self.num_expansion_bits
+
+    def get_bounds(self) -> str:
+        if self.custom_typestr:
+            raise ValueError("Cannot get bound string of UDVT")
+        if self.bytesN is None:
+            return f"{self.name} = {self.safe_typestr}(bound({self.name}, {self.get_lower_bound()}, {self.get_upper_bound()}));"
+        return f"""
+assembly {{
+{self.name} := and({self.name}, {self.get_truncated_bytesN_mask()});
+}}"""

@@ -181,7 +181,7 @@ assembly {{
             x.setter(udt_name=self.name, typesafe=typesafe) for x in self.regions
         )
         return f"""
-library {self.name}Type {{
+library {self.lib_name} {{
 {constants_str}
 
 {self.create_declaration(typesafe=typesafe)}
@@ -204,3 +204,18 @@ pragma solidity ^0.8.0;
 
 {self.library_declaration(typesafe=typesafe)}
 """
+
+    @property
+    def var_name(self):
+        """Get the name of the variable for this UDVT"""
+        return self.name[0].lower() + self.name[1:]
+
+    @property
+    def declaration(self):
+        """Get the declaration for this UDVT"""
+        return f"{self.name} {self.var_name}"
+
+    @property
+    def lib_name(self):
+        """Get the library name for this UDVT"""
+        return f"{self.name}Type"
