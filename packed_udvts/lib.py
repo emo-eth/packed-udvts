@@ -8,4 +8,5 @@ class UDTLibrary:
     udt_name: str
     regions: list[Region]
 
-    def from_members()
+    def from_members():
+        pass

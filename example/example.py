@@ -1,6 +1,7 @@
 from unittest import TestCase
 from packed_udvts.udvt import UserDefinedValueType
 from packed_udvts.member import Member
+from packed_udvts.test_gen import TestGen
 
 foo_member = Member(name="foo", width_bits=8, bytesN=None, signed=True)
 bar_member = Member(name="bar", width_bits=31, bytesN=4, signed=False)
@@ -9,9 +10,12 @@ members = [foo_member, bar_member, baz_member]
 u = UserDefinedValueType.from_members(
     name="UDVT", members=members, value_type="uint256"
 )
+tg = TestGen(u)
 
 # typesafe=True by default
-print(u.render_file())
+# print(u.render_file())
+
+print(tg.generate())
 # print(u.render_file(typesafe=False))
 
 # pool_member = Member(name="pool", width_bits=2, bytesN=None, signed=False)

@@ -151,5 +151,5 @@ class Member:
             return f"{self.name} = {self.safe_typestr}(bound({self.name}, {self.get_lower_bound()}, {self.get_upper_bound()}));"
         return f"""
 assembly {{
-{self.name} := and({self.name}, {self.get_truncated_bytesN_mask()});
+{self.name} := and({self.name}, {self.get_truncated_bytesN_mask()})
 }}"""
