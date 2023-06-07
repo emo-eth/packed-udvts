@@ -129,17 +129,17 @@ class UserDefinedValueType:
     def create_declaration(self, typesafe: bool = True):
         """Get the declaration for this UDVT
         TODO: investigate the effect ordering of parameters has on bytecode"""
-        initial = f"self := {self.regions[0].member.shadowed_name}"
+        initial = f"self := {self.regions[0].assembly_representation}"
         other_regions = []
         for r in self.regions[1:]:
             if r.member.bytesN is None:
-                expression_to_shl_then_or = r.member.shadowed_name
+                expression_to_shl_then_or = r.assembly_representation
             else:
                 assert (
                     r.member.num_expansion_bits is not None
                 ), "Member must have num_expansion_bits if not bytesN"
                 expression_to_shl_then_or = (
-                    f"shr({r.member.num_expansion_bits}, {r.member.shadowed_name})"
+                    f"shr({r.member.num_expansion_bits}, {r.assembly_representation})"
                 )
             other_regions.append(
                 f"self := or(self, shl({r.offset_bits_name}, {expression_to_shl_then_or}))"

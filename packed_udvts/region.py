@@ -62,6 +62,24 @@ class Region:
             return None
         return f"{self.member.name.upper()}_EXPANSION_BITS"
 
+    @property
+    def assembly_representation(self) -> str:
+        """Get the assembly representation of this member"""
+        if self.member.signed:
+            # if the member is signed, the 256th bit is set
+            # this needs to be "compacted" down into the member's width
+            # first test if it is greater than end mask, ie, signed
+            signed_test = f"gt({self.member.shadowed_name}, {self.end_mask_name})"
+            # if it is, shift it all the way to the left of the member. if it's 0, this does nothing
+            compact_signed_bit = f"shl({self.member.width_bits-1}, {signed_test})"
+            # mask the signed bit out of the member
+            masked_value = f"and({self.member.shadowed_name}, {self.end_mask_name})"
+            # OR the masked value with the compacted signed bit
+            return f"or({compact_signed_bit}, {masked_value})"
+
+        else:
+            return self.member.shadowed_name
+
     def get_shadowed_declaration(self, typesafe: bool = True):
         """Get the shadowed declaration for this member"""
         return f"{self.member.typestr(typesafe)} {self.member.shadowed_name}"

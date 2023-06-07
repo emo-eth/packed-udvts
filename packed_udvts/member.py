@@ -144,12 +144,14 @@ class Member:
         # shift upper_mask to the left by the number of expansion bits
         return max_numeric_value << self.num_expansion_bits
 
-    def get_bounds(self) -> str:
+    def get_bounds(self, name: Optional[str] = None) -> str:
+        if name is None:
+            name = self.name
         if self.custom_typestr:
             raise ValueError("Cannot get bound string of UDVT")
         if self.bytesN is None:
-            return f"{self.name} = {self.safe_typestr}(bound({self.name}, {self.get_lower_bound()}, {self.get_upper_bound()}));"
+            return f"{name} = {self.safe_typestr}(bound({name}, {hex(self.get_lower_bound())}, {hex(self.get_upper_bound())}));"
         return f"""
 assembly {{
-{self.name} := and({self.name}, {self.get_truncated_bytesN_mask()})
+{name} := and({name}, {hex(self.get_truncated_bytesN_mask())})
 }}"""
