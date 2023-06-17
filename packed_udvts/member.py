@@ -22,6 +22,8 @@ class Member:
     signed: bool = False
     # if a member is itself a UDVT, this is the name of the UDVT
     custom_typestr: Optional[str] = None
+    # if a member should be multiplied by a power of two, this is the power of two
+    expansion_bits: Optional[int] = None
 
     def __init__(
         self,
@@ -30,6 +32,7 @@ class Member:
         bytesN: Optional[int] = None,
         signed: bool = False,
         custom_typestr: Optional[str] = None,
+        expansion_bits: Optional[int] = None,
     ):
         assert width_bits > 0, "width_bits must be positive"
         assert bytesN is None or bytesN > 0, "bytesN must be positive or None"
@@ -43,6 +46,11 @@ class Member:
         self.bytesN = bytesN
         self.signed = signed
         self.custom_typestr = custom_typestr
+        if expansion_bits is not None:
+            # TODO: signextend?
+            assert expansion_bits >= 0, "expansion_bits must be non-negative"
+            assert expansion_bits + width_bits <= 256, "expansion_bits too large"
+        self.expansion_bits = expansion_bits
 
     @staticmethod
     def from_udvt(udvt: UserDefinedValueType, name: str) -> "Member":
@@ -70,7 +78,7 @@ class Member:
     def safe_typestr(self) -> str:
         """Get the safe typestr of this region"""
         if self.bytesN is None:
-            num_bytes = self.width_bits // 8
+            num_bytes = (self.width_bits + (self.expansion_bits or 0)) // 8
             recovered_bits = num_bytes * 8
             if recovered_bits == self.width_bits:
                 num_bits = recovered_bits
@@ -103,12 +111,12 @@ class Member:
 
     @property
     def num_expansion_bits(self) -> Optional[int]:
-        """Get the number of bits to expand this region by, if a bytesN type"""
-        if self.bytesN is None:
-            return None
-        # eg: bytes4; width of 5:
-        # 256 - 32 = 224
-        return 256 - self.bytesN * 8
+        """Get the number of bits to expand this region by"""
+        if self.bytesN:
+            # eg: bytes4; width of 5:
+            # 256 - 32 = 224
+            return 256 - self.bytesN * 8
+        return self.expansion_bits
 
     def typestr(self, typesafe: bool) -> str:
         """Get the typestr of this region"""

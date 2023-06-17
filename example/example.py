@@ -3,7 +3,9 @@ from packed_udvts.udvt import UserDefinedValueType
 from packed_udvts.member import Member
 from packed_udvts.test_gen import TestGen
 
-foo_member = Member(name="foo", width_bits=8, bytesN=None, signed=True)
+foo_member = Member(
+    name="foo", width_bits=8, bytesN=None, signed=True, expansion_bits=10
+)
 bar_member = Member(name="bar", width_bits=31, bytesN=4, signed=False)
 baz_member = Member(name="baz", width_bits=69, bytesN=None, signed=False)
 members = [foo_member, bar_member, baz_member]
@@ -15,7 +17,13 @@ tg = TestGen(u)
 # typesafe=True by default
 # print(u.render_file())
 
-print(tg.generate())
+with open("src/UDVTType.sol", "w") as f:
+    f.write(u.render_file())
+
+
+with open("test/foundry/UDVT.t.sol", "w") as f:
+    f.write(tg.generate())
+
 # print(u.render_file(typesafe=False))
 
 # pool_member = Member(name="pool", width_bits=2, bytesN=None, signed=False)
