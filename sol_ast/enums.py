@@ -66,6 +66,7 @@ class FunctionCallKind(Enum):
 class LiteralKind(Enum):
     Bool = auto()
     Number = auto()
+    HexNumber = auto()
     String = auto()
     HexString = auto()
     UnicodeString = auto()

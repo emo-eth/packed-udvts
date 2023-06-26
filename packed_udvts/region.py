@@ -1,7 +1,42 @@
 from dataclasses import dataclass
-from typing import Optional
+from pyclbr import Function
+from typing import Iterable, Optional
+
+from numpy import block
 from packed_udvts.member import Member
-from packed_udvts.constant_declaration import ConstantDeclaration
+from sol_ast.ast import (
+    Assignment,
+    BinaryOperation,
+    Block,
+    ElementaryTypeName,
+    FunctionCall,
+    FunctionDefinition,
+    Identifier,
+    InlineAssembly,
+    Literal,
+    ParameterList,
+    Statement,
+    TypeName,
+    VariableDeclaration,
+    YulAssignment,
+    YulBlock,
+    YulExpression,
+    yul_gt,
+    yul_or,
+    yul_and,
+    YulIdentifier,
+    yul_shl,
+    yul_shr,
+    yul_signextend,
+    YulLiteral,
+)
+from sol_ast.enums import (
+    BinaryOperator,
+    FunctionCallKind,
+    LiteralKind,
+    StateMutability,
+    Visibility,
+)
 
 
 @dataclass
@@ -15,23 +50,23 @@ class Region:
         self.offset_bits = offset_bits
 
     @property
-    def end_mask(self) -> str:
+    def end_mask(self) -> Literal:
         """Get the mask for this member, which will clear all bits above "width_bits"
         It should return a hex string starting with 0x and contain as many hex chars as necessary
         """
         # lol, lmao
         mask = int("1" * self.member.width_bits, 2)
-        return hex(mask)
+        return Literal(value=hex(mask), kind=LiteralKind.HexNumber)
 
     @property
-    def end_mask_name(self) -> str:
+    def end_mask_name(self) -> Identifier:
         """Get the name of the mask for this member, which will clear all bits above "width_bits"
         It should return a string
         """
-        return f"_{self.member.width_bits}_BIT_END_MASK"
+        return Identifier(f"_{self.member.width_bits}_BIT_END_MASK")
 
     @property
-    def not_mask(self) -> str:
+    def not_mask(self) -> Literal:
         """Get the 256-bit not-mask for this member; it should have 0 bits where the member is, and 1 bits everywhere else
         It should return a hex string starting with 0x and contain 64 hex characters"""
         # lol, lmao
@@ -41,68 +76,96 @@ class Region:
             + "1" * self.offset_bits,
             2,
         )
-        return hex(mask)
+        return Literal(value=hex(mask), kind=LiteralKind.HexNumber)
 
     @property
-    def not_mask_name(self) -> str:
+    def not_mask_name(self) -> Identifier:
         """Get the name of the 256-bit not-mask for this member; it should have 0 bits where the member is, and 1 bits everywhere else
         It should return a string
         """
-        return f"{self.member.name.upper()}_NOT_MASK"
+        return Identifier(f"{self.member.name.upper()}_NOT_MASK")
 
     @property
-    def offset_bits_name(self) -> str:
+    def offset_bits_name(self) -> Identifier:
         """Get the name of the offset for this member; it should return a string"""
-        return f"{self.member.name.upper()}_OFFSET"
+        return Identifier(f"{self.member.name.upper()}_OFFSET")
 
     @property
-    def expansion_bits_name(self) -> Optional[str]:
+    def expansion_bits_name(self) -> Optional[Identifier]:
         """Get the name of the expansion bits for this member; it should return a string"""
         if self.member.num_expansion_bits is None:
             return None
-        return f"{self.member.name.upper()}_EXPANSION_BITS"
+        return Identifier(f"{self.member.name.upper()}_EXPANSION_BITS")
 
     @property
-    def assembly_representation(self) -> str:
+    def assembly_representation(self) -> YulExpression:
         """Get the assembly representation of this member"""
         if self.member.signed:
             # if the member is signed, the 256th bit is set
             # this needs to be "compacted" down into the member's width
             # first test if it is greater than end mask, ie, signed
-            signed_test = f"gt({self.member.shadowed_name}, {self.end_mask_name})"
+            signed_test = yul_gt(
+                self.member.shadowed_name.to_yul_identifier(),
+                self.end_mask_name.to_yul_identifier(),
+            )
             # if it is, shift it all the way to the left of the member. if it's 0, this does nothing
-            compact_signed_bit = f"shl({self.member.width_bits-1}, {signed_test})"
+            compact_signed_bit = yul_shl(
+                YulLiteral(str(self.member.width_bits - 1)), signed_test
+            )
             # mask the signed bit out of the member
-            masked_value = f"and({self.member.shadowed_name}, {self.end_mask_name})"
+            masked_value = yul_and(
+                self.member.shadowed_name.to_yul_identifier(),
+                self.end_mask_name.to_yul_identifier(),
+            )
             # OR the masked value with the compacted signed bit
-            return f"or({compact_signed_bit}, {masked_value})"
+            return yul_or(compact_signed_bit, masked_value)
 
         else:
-            return self.member.shadowed_name
+            return self.member.shadowed_name.to_yul_identifier()
 
-    def get_shadowed_declaration(self, typesafe: bool = True):
+    def get_shadowed_declaration(self, typesafe: bool = True) -> VariableDeclaration:
         """Get the shadowed declaration for this member"""
-        return f"{self.member.typestr(typesafe)} {self.member.shadowed_name}"
+        return VariableDeclaration(
+            type_name=self.member.typestr(typesafe), name=self.member.shadowed_name.name
+        )
 
-    def setter(self, udt_name: str, typesafe: bool = True) -> str:
+    def setter(self, udt_name: TypeName, typesafe: bool = True) -> FunctionDefinition:
         """Get the function body for the setter for this member"""
-        if self.member.num_expansion_bits:
-            value_expression = (
-                f"shr({self.expansion_bits_name}, {self.member.shadowed_name})"
+        if self.member.num_expansion_bits is not None:
+            assert self.expansion_bits_name is not None
+            value_expression = yul_shr(
+                self.expansion_bits_name.to_yul_identifier(),
+                self.member.shadowed_name.to_yul_identifier(),
             )
         else:
             if self.member.signed and self.member.width_bits != 256:
                 # mask signed values and use signextend later
-                value_expression = (
-                    f"and({self.member.shadowed_name}, {self.end_mask_name})"
+                value_expression = yul_and(
+                    self.member.shadowed_name.to_yul_identifier(),
+                    self.end_mask_name.to_yul_identifier(),
                 )
             else:
-                value_expression = self.member.shadowed_name
+                value_expression = self.member.shadowed_name.to_yul_identifier()
         if self.offset_bits:
-            rhs = f"shl({self.offset_bits_name}, {value_expression})"
+            rhs = yul_shl(self.offset_bits_name.to_yul_identifier(), value_expression)
         else:
             rhs = value_expression
-        masked_lhs = f"and(self, {self.not_mask_name})"
+        masked_lhs = yul_and(
+            YulIdentifier("self"), self.not_mask_name.to_yul_identifier()
+        )
+        return FunctionDefinition(
+            name=f"set{self.member.title}",
+            parameters=ParameterList(
+                VariableDeclaration(type_name=udt_name, name="self"),
+                self.get_shadowed_declaration(typesafe),
+            ),
+            return_parameters=ParameterList(
+                VariableDeclaration(type_name=udt_name, name="updated")
+            ),
+            visibility=Visibility.Internal,
+            state_mutability=StateMutability.Pure,
+            body=Block(),
+        )
         return f"""
 function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)} {self.member.shadowed_name}) internal pure returns ({udt_name} updated) {{
 {self.typesafe_require if typesafe and not self.member.custom_typestr else ""}
@@ -112,77 +175,148 @@ updated := or({masked_lhs}, {rhs})
 }}"""
 
     @property
-    def typesafe_require(self) -> str:
+    def typesafe_require(self) -> Iterable[Statement]:
         """Get the require statement for this member"""
         # TODO: very inefficient; optimize by reusing masked values
+        initial_cast_statements = []
         if self.member.bytesN is not None:
             if self.member.num_expansion_bits:
-                preamble = f"""
-uint256 cast;
-assembly {{
-cast := shr({self.member.num_expansion_bits}, {self.member.shadowed_name})
-}}
-    """
+                initial_cast_statements = [
+                    VariableDeclaration(ElementaryTypeName("uint256"), "cast"),
+                    InlineAssembly(
+                        YulBlock(
+                            YulAssignment(
+                                YulIdentifier("cast"),
+                                value=yul_shr(
+                                    YulLiteral(str(self.member.num_expansion_bits)),
+                                    self.member.shadowed_name.to_yul_identifier(),
+                                ),
+                            )
+                        )
+                    ),
+                ]
+                require_predicate = BinaryOperation(
+                    Identifier("cast"),
+                    BinaryOperator.LessThanOrEqual,
+                    self.end_mask_name,
+                )
             else:
-                preamble = ""
-            lhs = "true"
+                return []
         elif self.member.signed:
-            preamble = f"""
-uint256 cast;
-assembly {{
-cast := and({self.member.shadowed_name}, {self.end_mask_name})
-}}
-"""
-            lhs = f"cast <= {self.end_mask_name}"
+            initial_cast_statements = [
+                VariableDeclaration(ElementaryTypeName("uint256"), "cast"),
+                InlineAssembly(
+                    YulBlock(
+                        YulAssignment(
+                            YulIdentifier("cast"),
+                            value=yul_and(
+                                self.member.shadowed_name.to_yul_identifier(),
+                                self.end_mask_name.to_yul_identifier(),
+                            ),
+                        )
+                    )
+                ),
+            ]
+            require_predicate = BinaryOperation(
+                Identifier("cast"),
+                BinaryOperator.LessThanOrEqual,
+                # shift right to account for signed bit
+                BinaryOperation(self.end_mask_name, BinaryOperator.Shr, Literal("1")),
+            )
         else:
-            preamble = ""
-            lhs = f"{self.member.shadowed_name} <= {self.end_mask_name}"
-        return f'{preamble}require({lhs}, "{self.member.name} value too large");'
+            require_predicate = BinaryOperation(
+                self.member.shadowed_name,
+                BinaryOperator.LessThanOrEqual,
+                self.end_mask_name,
+            )
+        return initial_cast_statements + [
+            FunctionCall(
+                Identifier("require"),
+                kind=FunctionCallKind.FunctionCall,
+                arguments=[
+                    require_predicate,
+                    Literal(
+                        f'"{self.member.name} value too large"', LiteralKind.String
+                    ),
+                ],
+            )
+        ]
 
-    def getter(self, udt_name: str, typesafe: bool = True) -> str:
+    def getter(self, udt_name: TypeName, typesafe: bool = True) -> FunctionDefinition:
         """Get the function body for the getter for this member"""
-        return f"""
-function get{self.member.title}({udt_name} self) internal pure returns ({self.member.typestr(typesafe)} {self.member.shadowed_name}) {{
-assembly {{
-{self._shift_and_unmask()}
-}}
-}}"""
+        return FunctionDefinition(
+            name=f"get{self.member.title}",
+            parameters=ParameterList(
+                VariableDeclaration(type_name=udt_name, name="self")
+            ),
+            return_parameters=ParameterList(
+                VariableDeclaration(
+                    type_name=self.member.typestr(typesafe),
+                    name=self.member.shadowed_name.name,
+                )
+            ),
+            body=Block(self._shift_and_unmask()),
+        )
 
-    def _shift_and_unmask(self) -> str:
+    def _shift_and_unmask(self) -> InlineAssembly:
         """Get the assembly for shifting and unmasking this member"""
+        expression_to_mask: YulExpression
         if self.offset_bits == 0:
-            expression_to_mask = "self"
+            expression_to_mask = YulIdentifier("self")
         else:
-            expression_to_mask = f"shr({self.offset_bits_name}, self)"
-        masked_expression = f"and({expression_to_mask}, {self.end_mask_name})"
+            expression_to_mask = yul_shr(
+                self.offset_bits_name.to_yul_identifier(), YulIdentifier("self")
+            )
+        masked_expression = yul_and(
+            expression_to_mask, self.end_mask_name.to_yul_identifier()
+        )
         if self.member.num_expansion_bits:
-            rhs = f"shl({self.expansion_bits_name}, {masked_expression})"
+            assert self.expansion_bits_name is not None
+            rhs = yul_shl(
+                self.expansion_bits_name.to_yul_identifier(), masked_expression
+            )
         else:
             if self.member.signed and self.member.width_bits != 256:
-                rhs = f"signextend({self.member.ceil_bytes - 1}, {masked_expression})"
+                rhs = yul_signextend(
+                    YulLiteral(str(self.member.ceil_bytes - 1)), masked_expression
+                )
             else:
                 rhs = masked_expression
-        assignment = f"{self.member.shadowed_name} := {rhs}"
-        return f"""{assignment}"""
+        assignment = YulAssignment(
+            self.member.shadowed_name.to_yul_identifier(), value=rhs
+        )
+        return InlineAssembly(YulBlock(assignment))
 
-    def get_constant_declarations(self) -> list[ConstantDeclaration]:
+    def get_constant_declarations(self) -> list[VariableDeclaration]:
         """Get the constant declarations for this member"""
         return [
             x
             for x in [
-                ConstantDeclaration(name=self.end_mask_name, value=self.end_mask),
-                ConstantDeclaration(
-                    name=self.not_mask_name,
+                VariableDeclaration(
+                    constant=True,
+                    type_name=ElementaryTypeName("uint256"),
+                    name=self.end_mask_name.name,
+                    value=self.end_mask,
+                ),
+                VariableDeclaration(
+                    constant=True,
+                    type_name=ElementaryTypeName("uint256"),
+                    name=self.not_mask_name.name,
                     value=self.not_mask,
                 ),
-                ConstantDeclaration(
-                    name=self.offset_bits_name, value=str(self.offset_bits)
+                VariableDeclaration(
+                    constant=True,
+                    type_name=ElementaryTypeName("uint256"),
+                    name=self.offset_bits_name.name,
+                    value=Literal(str(self.offset_bits)),
                 )
                 if self.offset_bits
                 else None,
-                ConstantDeclaration(
-                    name=self.expansion_bits_name,
-                    value=str(self.member.num_expansion_bits),
+                VariableDeclaration(
+                    constant=True,
+                    type_name=ElementaryTypeName("uint256"),
+                    name=self.expansion_bits_name.name,
+                    value=Literal(str(self.member.num_expansion_bits)),
                 )
                 if self.expansion_bits_name
                 else None,
