@@ -2,7 +2,6 @@
 
 This is a very experimental Python library for generating libaries for efficient bitpacking with [user-defined value types](https://docs.soliditylang.org/en/latest/types.html#user-defined-value-types) in Solidity.
 
-
 # Member
 
 A `Member` is the basic unit of a `UserDefinedValueType`. Its simplified declaration is as follows:
@@ -10,16 +9,19 @@ A `Member` is the basic unit of a `UserDefinedValueType`. Its simplified declara
 ```python
 @dataclass
 class Member:
-    # snake-case name of this member
+    # snake-case name of this member; will be converted to title case for the getter and setter
+    # and upper-cased for constants
     name: str
     # width of this member in bits
     width_bits: int
-    # if a bytesN type, the number of bytes; used for expanding and packing
+    # if a bytesN type, the number of bytes
     bytesN: Optional[int] = None
-    # if not bytesN, signed or unsigned; will throw if bytesN is set
+    # if not bytesN, signed or unsigned
     signed: bool = False
     # if a member is itself a UDVT, this is the name of the UDVT
-    custom_typestr: Optional[str] = None
+    custom_typestr: Optional[UserDefinedTypeName] = None
+    # if a member should be multiplied by a power of two, this is the power of two
+    expansion_bits: Optional[int] = None
 ```
 
 # Region
