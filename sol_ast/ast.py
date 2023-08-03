@@ -1,4 +1,6 @@
+from itertools import chain
 from typing import (
+    Iterable,
     Optional,
     Union,
     TypeAlias,
@@ -182,6 +184,9 @@ class AstNode(metaclass=NodeDictChecker):
     @abstractmethod
     def fmt(self) -> str:
         pass
+
+    def __str__(self) -> str:
+        return self.fmt()
 
 
 class TypeDescriptions:
@@ -725,7 +730,7 @@ class VariableDeclaration(AstNode):
         documentation: Optional[StructuredDocumentation] = None,
         function_selector: Optional[str] = None,
         indexed: bool = False,
-        mutability: Optional[Mutability] = None,
+        mutability: Optional[Mutability] = Mutability.Mutable,
         overrides: Optional[OverrideSpecifier] = None,
         scope: Optional[AstId] = None,
         storage_location: Optional[StorageLocation] = None,
@@ -753,8 +758,8 @@ class VariableDeclaration(AstNode):
 
     @property
     def mutability(self) -> Mutability:
-        if self.mutability:
-            return self.mutability
+        if self._mutability:
+            return self._mutability
         if self.constant:
             return Mutability.Constant
         if self.state_variable:
@@ -762,8 +767,9 @@ class VariableDeclaration(AstNode):
         raise Unreachable()
 
     def fmt(self) -> str:
-        qualifier = self.indexed or self.storage_location or self.mutability
-        return f"{self.type_name.fmt()} {qualifier} {self.name or ''}"
+        qualifier = self.indexed or self.storage_location or self.mutability.value
+        components = [self.type_name.fmt(), qualifier, self.name or ""]
+        return " ".join(c for c in components if c)
 
 
 class ParameterList:
@@ -909,7 +915,9 @@ class Block(StmtNode):
         self.statements = list(statements)
 
     def fmt(self) -> str:
-        return line_join(wrap_block(self.statements, semicolon=True))
+        return "\n".join(
+            chain("{", (statement.fmt() for statement in self.statements), "}")
+        )
 
 
 class Break(Statement):
@@ -1432,10 +1440,27 @@ class FunctionDefinition(AstNode):
         is_constructor: bool = False,
         is_declared_const: bool = False,
         is_payable: bool = False,
+        kind: Optional[FunctionKind] = None,
     ):
         self.name = name
         self.parameters = parameters or ParameterList()
         self.return_parameters = return_parameters or ParameterList()
+        self.name_location = name_location
+        self.base_functions = base_functions
+        self.body = body
+        self.documentation = documentation
+        self.function_selector = function_selector
+        self.implemented = implemented
+        self.modifiers = modifiers
+        self.overrides = overrides
+        self.visibility = visibility
+        self.scope = scope or AstId(randint(0, 2**32))
+        self._kind = kind
+        self._state_mutability = state_mutability
+        self.is_virtual = is_virtual
+        self.is_constructor = is_constructor
+        self.is_declared_const = is_declared_const
+        self.is_payable = is_payable
 
     @property
     def kind(self) -> FunctionKind:
@@ -1454,6 +1479,26 @@ class FunctionDefinition(AstNode):
         if self.is_declared_const:
             return StateMutability.View
         return StateMutability.Nonpayable
+
+    def fmt(self) -> str:
+        if self.kind == FunctionKind.Constructor:
+            raise NotImplemented()
+        elif self.kind == FunctionKind.Fallback:
+            raise NotImplemented()
+        elif self.kind == FunctionKind.Receive:
+            raise NotImplemented()
+        name = f"function {self.name}{self.parameters.fmt()} {self.visibility.value} {self.state_mutability.value}"
+        if self.is_virtual:
+            name += " virtual"
+        if self.return_parameters.parameters:
+            name += f" returns {self.return_parameters.fmt()}"
+        if self.overrides:
+            name += f"override {self.overrides.fmt()}"
+        if self.body:
+            body = self.body.fmt()
+        else:
+            body = ";"
+        return f"{name} {body}"
 
 
 class StructDefinition(AstNode):

@@ -1,6 +1,7 @@
 from unittest import TestCase
 from packed_udvts.region import Region
 from packed_udvts.member import Member
+from sol_ast.ast import UserDefinedTypeName
 
 
 class TestRegion(TestCase):
@@ -37,7 +38,11 @@ assembly {{
 updated := or(and(self, FOO_NOT_MASK), shl({r.offset_bits_name}, _foo))
 }}
 }}"""
-        self.assertEqual(r.setter("Udt"), setter_str)
+        result = r.setter(UserDefinedTypeName("Udt")).fmt()
+        print(result)
+        print("!!!")
+        print(setter_str)
+        self.assertEqual(result, setter_str)
 
     def test_getter(self):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)
