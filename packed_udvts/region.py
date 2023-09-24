@@ -4,10 +4,8 @@ from typing import Iterable, Optional, cast
 
 from packed_udvts.member import Member
 from sol_ast.ast import (
-    BinaryOperation,
     Block,
     ElementaryTypeName,
-    ExpressionStatement,
     FunctionCall,
     FunctionDefinition,
     Identifier,
@@ -18,13 +16,11 @@ from sol_ast.ast import (
     RevertStatement,
     Statement,
     TypeName,
-    UnaryOperation,
     VariableDeclaration,
     VariableDeclarationStatement,
     YulAssignment,
     YulBlock,
     YulExpression,
-    YulExpressionStatement,
     YulStatement,
     YulVariableDeclaration,
     yul_gt,
@@ -39,12 +35,10 @@ from sol_ast.ast import (
     Expression,
 )
 from sol_ast.enums import (
-    BinaryOperator,
     FunctionCallKind,
     LiteralKind,
     Mutability,
     StateMutability,
-    UnaryOperator,
     Visibility,
 )
 
