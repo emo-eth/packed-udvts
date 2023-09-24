@@ -1,20 +1,24 @@
+from ast import Expression
 from dataclasses import dataclass
 from pyclbr import Function
 from typing import Iterable, Optional
 
 from numpy import block
 from packed_udvts.member import Member
+from packed_udvts.util import to_statements
 from sol_ast.ast import (
     Assignment,
     BinaryOperation,
     Block,
     ElementaryTypeName,
+    ExpressionStatement,
     FunctionCall,
     FunctionDefinition,
     Identifier,
     InlineAssembly,
     Literal,
     ParameterList,
+    LineStatement,
     Statement,
     TypeName,
     VariableDeclaration,
@@ -153,6 +157,14 @@ class Region:
         masked_lhs = yul_and(
             YulIdentifier("self"), self.not_mask_name.to_yul_identifier()
         )
+        updated_assignment = YulAssignment(
+            YulIdentifier("updated"), value=yul_or(masked_lhs, rhs)
+        )
+        inline_assembly = InlineAssembly(YulBlock(updated_assignment))
+        if typesafe:
+            statements = Block(*self.typesafe_require, inline_assembly)
+        else:
+            statements = Block(inline_assembly)
         return FunctionDefinition(
             name=f"set{self.member.title}",
             parameters=ParameterList(
@@ -164,7 +176,7 @@ class Region:
             ),
             visibility=Visibility.Internal,
             state_mutability=StateMutability.Pure,
-            body=Block(),
+            body=statements,
         )
         return f"""
 function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)} {self.member.shadowed_name}) internal pure returns ({udt_name} updated) {{
@@ -178,11 +190,13 @@ updated := or({masked_lhs}, {rhs})
     def typesafe_require(self) -> Iterable[Statement]:
         """Get the require statement for this member"""
         # TODO: very inefficient; optimize by reusing masked values
-        initial_cast_statements = []
+        initial_cast_statements: list[Statement] = []
         if self.member.bytesN is not None:
             if self.member.num_expansion_bits:
                 initial_cast_statements = [
-                    VariableDeclaration(ElementaryTypeName("uint256"), "cast"),
+                    ExpressionStatement(
+                        VariableDeclaration(ElementaryTypeName("uint256"), "cast")
+                    ),
                     InlineAssembly(
                         YulBlock(
                             YulAssignment(
@@ -204,7 +218,9 @@ updated := or({masked_lhs}, {rhs})
                 return []
         elif self.member.signed:
             initial_cast_statements = [
-                VariableDeclaration(ElementaryTypeName("uint256"), "cast"),
+                ExpressionStatement(
+                    VariableDeclaration(ElementaryTypeName("uint256"), "cast")
+                ),
                 InlineAssembly(
                     YulBlock(
                         YulAssignment(
@@ -230,15 +246,17 @@ updated := or({masked_lhs}, {rhs})
                 self.end_mask_name,
             )
         return initial_cast_statements + [
-            FunctionCall(
-                Identifier("require"),
-                kind=FunctionCallKind.FunctionCall,
-                arguments=[
-                    require_predicate,
-                    Literal(
-                        f'"{self.member.name} value too large"', LiteralKind.String
-                    ),
-                ],
+            ExpressionStatement(
+                FunctionCall(
+                    Identifier("require"),
+                    kind=FunctionCallKind.FunctionCall,
+                    arguments=[
+                        require_predicate,
+                        Literal(
+                            f"{self.member.name} value too large", LiteralKind.String
+                        ),
+                    ],
+                )
             )
         ]
 
@@ -255,6 +273,7 @@ updated := or({masked_lhs}, {rhs})
                     name=self.member.shadowed_name.name,
                 )
             ),
+            state_mutability=StateMutability.Pure,
             body=Block(self._shift_and_unmask()),
         )
 

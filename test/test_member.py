@@ -20,19 +20,19 @@ class TestMember(TestCase):
 
     def test_shadowed_name(self):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)
-        self.assertEqual(member.shadowed_name, "_foo")
+        self.assertEqual(member.shadowed_name.fmt(), "_foo")
 
     def test_safe_typestr(self):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)
-        self.assertEqual(member.safe_typestr, "uint8")
+        self.assertEqual(member.safe_typestr.fmt(), "uint8")
 
     def test_safe_typestr_signed(self):
         member = Member(name="foo", width_bits=8, bytesN=None, signed=True)
-        self.assertEqual(member.safe_typestr, "int8")
+        self.assertEqual(member.safe_typestr.fmt(), "int8")
 
     def test_safe_typestr_bytes(self):
         member = Member(name="foo", width_bits=5, bytesN=2, signed=False)
-        self.assertEqual(member.safe_typestr, "bytes2")
+        self.assertEqual(member.safe_typestr.fmt(), "bytes2")
 
     def test_ceil_bytes(self):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)
@@ -46,15 +46,15 @@ class TestMember(TestCase):
 
     def test_unsafe_typestr(self):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)
-        self.assertEqual(member.unsafe_typestr, "uint256")
+        self.assertEqual(member.unsafe_typestr.fmt(), "uint256")
 
     def test_unsafe_typestr_signed(self):
         member = Member(name="foo", width_bits=8, bytesN=None, signed=True)
-        self.assertEqual(member.unsafe_typestr, "int256")
+        self.assertEqual(member.unsafe_typestr.fmt(), "int256")
 
     def test_unsafe_typestr_bytes(self):
         member = Member(name="foo", width_bits=5, bytesN=2, signed=False)
-        self.assertEqual(member.unsafe_typestr, "bytes32")
+        self.assertEqual(member.unsafe_typestr.fmt(), "bytes32")
 
     def test_num_expansion_bits(self):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)
@@ -62,13 +62,13 @@ class TestMember(TestCase):
 
     def test_typestr(self):
         member = Member(name="foo", width_bits=5, bytesN=None, signed=False)
-        self.assertEqual(member.typestr(typesafe=True), "uint8")
-        self.assertEqual(member.typestr(typesafe=False), "uint256")
+        self.assertEqual(member.typestr(typesafe=True).fmt(), "uint8")
+        self.assertEqual(member.typestr(typesafe=False).fmt(), "uint256")
 
         member = Member(name="foo", width_bits=8, bytesN=None, signed=True)
-        self.assertEqual(member.typestr(typesafe=True), "int8")
-        self.assertEqual(member.typestr(typesafe=False), "int256")
+        self.assertEqual(member.typestr(typesafe=True).fmt(), "int8")
+        self.assertEqual(member.typestr(typesafe=False).fmt(), "int256")
 
         member = Member(name="foo", width_bits=69, bytesN=None, signed=False)
-        self.assertEqual(member.typestr(typesafe=True), "uint72")
-        self.assertEqual(member.typestr(typesafe=False), "uint256")
+        self.assertEqual(member.typestr(typesafe=True).fmt(), "uint72")
+        self.assertEqual(member.typestr(typesafe=False).fmt(), "uint256")

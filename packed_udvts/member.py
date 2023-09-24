@@ -18,7 +18,7 @@ from sol_ast.ast import (
     YulLiteral,
     yul_and,
 )
-from packed_udvts.util import to_title_case
+from packed_udvts.util import to_camel_case, to_title_case
 from math import ceil
 
 from sol_ast.enums import (
@@ -94,9 +94,19 @@ class Member:
         return to_title_case(self.name)
 
     @property
+    def camel(self) -> str:
+        """Convert the name of this region to camel case"""
+        return to_camel_case(self.name)
+
+    @property
+    def identifier(self) -> Identifier:
+        """Get the identifier of this region"""
+        return Identifier(self.camel)
+
+    @property
     def shadowed_name(self) -> Identifier:
         """Get the shadowed name of this region"""
-        return Identifier(f"_{self.name}")
+        return Identifier(f"_{self.camel}")
 
     @property
     def safe_typestr(self) -> ElementaryTypeName:
@@ -186,7 +196,7 @@ class Member:
         self, name: Optional[Identifier] = None
     ) -> Assignment | InlineAssembly:
         if name is None:
-            name = Identifier(self.name)
+            name = self.identifier
         if self.custom_typestr:
             raise ValueError("Cannot get bound string of UDVT")
         if self.bytesN is None:

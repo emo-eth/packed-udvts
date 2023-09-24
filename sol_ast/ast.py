@@ -1,6 +1,5 @@
 from itertools import chain
 from typing import (
-    Iterable,
     Optional,
     Union,
     TypeAlias,
@@ -55,6 +54,8 @@ Expression: TypeAlias = Union[
     "NewExpression",
     "TupleExpression",
     "UnaryOperation",
+    "Literal",
+    "VariableDeclaration",
 ]
 
 StructuredDocumentation: TypeAlias = str  # Union[str]
@@ -71,19 +72,19 @@ TypeName: TypeAlias = Union[
 YulCaseValue: TypeAlias = Union["YulLiteral", StringLiteral["default"]]
 
 
-YulStatement: TypeAlias = Union[
-    "YulAssignment",
-    "YulBlock",
-    "YulBreak",
-    "YulContinue",
-    "YulExpressionStatement",
-    "YulLeave",
-    "YulForLoop",
-    "YulFunctionDefinition",
-    "YulIf",
-    "YulSwitch",
-    "YulVariableDeclaration",
-]
+# YulStatement: TypeAlias = Union[
+#     "YulAssignment",
+#     "YulBlock",
+#     "YulBreak",
+#     "YulContinue",
+#     "YulExpressionStatement",
+#     "YulLeave",
+#     "YulForLoop",
+#     "YulFunctionDefinition",
+#     "YulIf",
+#     "YulSwitch",
+#     "YulVariableDeclaration",
+# ]
 
 YulExpression: TypeAlias = Union[
     "YulFunctionCall",
@@ -151,6 +152,13 @@ BlockType: TypeAlias = Union[
 ]
 
 
+def fmt_expression(thing: Expression) -> str:
+    if isinstance(thing, Identifier):
+        return thing.fmt()
+    else:
+        return f"({thing.fmt()})"
+
+
 class AstId(int):
     pass
 
@@ -183,10 +191,13 @@ class AstNode(metaclass=NodeDictChecker):
 
     @abstractmethod
     def fmt(self) -> str:
-        pass
+        raise NotImplementedError()
 
     def __str__(self) -> str:
         return self.fmt()
+
+    def __repr__(self) -> str:
+        return str(self)
 
 
 class TypeDescriptions:
@@ -437,7 +448,7 @@ class BinaryOperation(AstNode):
         self.common_type = common_type
 
     def fmt(self) -> str:
-        return f"({self.lhs.fmt()}) {self.operator.value} {self.rhs.fmt()}"
+        return f"{fmt_expression(self.lhs)} {self.operator.value} {fmt_expression(self.rhs)}"
 
 
 class Assignment(ExprNode):
@@ -473,7 +484,7 @@ class FunctionCall(ExprNode):
     arguments: list["Expression"]
     expression: "Expression"
     kind: FunctionCallKind
-    names: list[str]
+    names: list[Identifier]
     options: list[FunctionCallOption]
     type_descriptions: Optional[TypeDescriptions]
     try_call: bool
@@ -483,13 +494,13 @@ class FunctionCall(ExprNode):
         expression: "Expression",
         kind: FunctionCallKind,
         arguments: list["Expression"] = [],
-        names: list[str] = [],
+        names: list[Identifier] = [],
         options: list[FunctionCallOption] = [],
         type_descriptions: Optional[TypeDescriptions] = None,
         try_call: bool = False,
     ):
         super().__init__()
-        if names is not None:
+        if names:
             assert arguments is not None and len(arguments) == len(
                 names
             ), "names and arguments must have the same length"
@@ -506,10 +517,11 @@ class FunctionCall(ExprNode):
         if self.options:
             options_str = f'{{{", ".join([option.fmt() for option in self.options])}}}'
 
-        if self.names is None:
-            args_str = f"({', '.join([arg.fmt() for arg in self.arguments])})"
-        else:
+        if self.names:
             args_str = f"{{{', '.join(f'{name}: {arg.fmt()}' for name, arg in zip(self.names, self.arguments))}}}"
+        else:
+            args_str = f"{', '.join([arg.fmt() for arg in self.arguments])}"
+
         return f"{self.expression.fmt()}{options_str}({args_str})"
 
 
@@ -903,14 +915,22 @@ class StmtNode(AstNode):
     documentation: Optional[str]
 
 
-class Statement(AstNode, metaclass=StatementChecker):
+class Statement(StmtNode):
     pass
 
 
-class Block(StmtNode):
-    statements: list[BlockType]
+class LineStatement(Statement, metaclass=StatementChecker):
+    pass
 
-    def __init__(self, *statements: BlockType):
+
+class YulStatement(StmtNode):
+    pass
+
+
+class Block(Statement):
+    statements: list[Statement]
+
+    def __init__(self, *statements: Statement):
         super().__init__()
         self.statements = list(statements)
 
@@ -920,15 +940,15 @@ class Block(StmtNode):
         )
 
 
-class Break(Statement):
+class Break(LineStatement):
     pass
 
 
-class Continue(Statement):
+class Continue(LineStatement):
     pass
 
 
-class DoWhileStatement(Statement):
+class DoWhileStatement(LineStatement):
     block: Block
     condition: Expression
 
@@ -941,7 +961,7 @@ class DoWhileStatement(Statement):
         return f"do {self.block.fmt()} while ({self.condition.fmt()})"
 
 
-class EmitStatement(Statement):
+class EmitStatement(LineStatement):
     event_call: FunctionCall
 
     def __init__(self, event_call: FunctionCall):
@@ -952,7 +972,7 @@ class EmitStatement(Statement):
         return f"emit {self.event_call.fmt()};"
 
 
-class ExpressionStatement(Statement):
+class ExpressionStatement(LineStatement):
     expression: Expression
 
     def __init__(self, expression: Expression):
@@ -1004,36 +1024,24 @@ class ForStatement(Statement):
         )
 
 
-class VariableDeclarationStatement(Statement):
-    assignments: Optional[list[AstId]]
-    declarations: Optional[list[VariableDeclaration]]
+class VariableDeclarationStatement(LineStatement):
+    assignments: Union[list[Identifier], list[VariableDeclaration]]
     initial_value: Optional[Expression]
 
     def __init__(
         self,
-        assignments: Optional[list[AstId]],
-        declarations: Optional[list[VariableDeclaration]],
+        assignments: Union[list[Identifier], list[VariableDeclaration]],
         initial_value: Optional[Expression],
     ):
         super().__init__()
-        if assignments is None and declarations is None:
+        if assignments is None:
             raise ValueError("Either assignments or declarations must be provided")
-        if assignments is not None and declarations is not None:
-            raise ValueError("Only one of assignments or declarations can be provided")
-        if not len(assignments or declarations):  # type: ignore
-            raise ValueError("Either assignments or declarations must be non-empty")
-        if initial_value is None and declarations is None:
-            raise ValueError("Either assignments or declarations must be provided")
+
         self.assignments = assignments
-        self.declarations = declarations
         self.initial_value = initial_value
 
     def fmt(self) -> str:
-        lhs = ""
-        if self.assignments is not None:
-            lhs = ", ".join(self.d[a].fmt() for a in self.assignments)
-        elif self.declarations is not None:
-            lhs = ", ".join(d.fmt() for d in self.declarations)
+        lhs = ", ".join(a.fmt() for a in self.assignments)
         rhs = ""
         if self.initial_value is not None:
             rhs = f" = ({self.initial_value.fmt()})"
@@ -1046,7 +1054,7 @@ class IfStatement(Statement):
     true_body: BlockType
 
 
-class YulBlock(StmtNode):
+class YulBlock(Statement):
     statements: Sequence["YulStatement"]
 
     def __init__(self, *statements: "YulStatement"):
@@ -1066,7 +1074,7 @@ class YulIdentifier(AstNode):
         return self.name
 
 
-class YulKeyword(StmtNode):
+class YulKeyword(YulStatement):
     pass
 
 
@@ -1105,7 +1113,7 @@ class YulLiteral(AstNode):
         return self.value
 
 
-class YulAssignment(StmtNode):
+class YulAssignment(YulStatement):
     value: "YulExpression"
     variables: list[YulIdentifier]
 
@@ -1122,7 +1130,7 @@ class YulAssignment(StmtNode):
         return f"{', '.join(v.fmt() for v in self.variables)} := {self.value.fmt()}"
 
 
-class YulExpressionStatement(StmtNode):
+class YulExpressionStatement(YulStatement):
     expression: "YulExpression"
 
     def __init__(self, expression: "YulExpression"):
@@ -1133,7 +1141,7 @@ class YulExpressionStatement(StmtNode):
         return self.expression.fmt()
 
 
-class YulForLoop(StmtNode):
+class YulForLoop(YulStatement):
     body: YulBlock
     condition: "YulExpression"
     post: YulBlock
@@ -1153,33 +1161,33 @@ class YulForLoop(StmtNode):
         self.pre = pre
 
     def fmt(self) -> str:
-        return f"for {self.pre.fmt()} {self.condition.fmt()} {self.post.fmt()} {self.body.fmt()}"
+        return f"for {{{self.pre.fmt()}}} {self.condition.fmt()} {{{self.post.fmt()}}} {{{self.body.fmt()}}}"
 
 
-class YulTypedName(AstNode):
-    name: str
-    type_name: str
+# class YulTypedName(AstNode):
+#     name: str
+#     type_name: str
 
-    def __init__(self, name: str, type_name: str):
-        super().__init__()
-        self.name = name
-        self.type_name = type_name
+#     def __init__(self, name: str, type_name: str):
+#         super().__init__()
+#         self.name = name
+#         self.type_name = type_name
 
-    def fmt(self) -> str:
-        return f"{self.name} {self.type_name}"
+#     def fmt(self) -> str:
+#         return f"{self.name} {self.type_name}"
 
 
-class YulFunctionDefinition(StmtNode):
+class YulFunctionDefinition(YulStatement):
     body: YulBlock
     name: str
-    parameters: list[YulTypedName]
-    return_variables: list[YulTypedName]
+    parameters: list[YulIdentifier]
+    return_variables: list[YulIdentifier]
 
     def __init__(
         self,
         name: str,
-        parameters: list[YulTypedName],
-        return_variables: list[YulTypedName],
+        parameters: list[YulIdentifier],
+        return_variables: list[YulIdentifier],
         body: YulBlock,
     ):
         super().__init__()
@@ -1192,7 +1200,7 @@ class YulFunctionDefinition(StmtNode):
         return f"function {self.name}({', '.join(p.fmt() for p in self.parameters)}) -> ({', '.join(r.fmt() for r in self.return_variables)}) {self.body.fmt()}"
 
 
-class YulIf(StmtNode):
+class YulIf(YulStatement):
     body: YulBlock
     condition: "YulExpression"
 
@@ -1218,14 +1226,14 @@ class YulCase(AstNode):
         return f"case {self.value.fmt() if isinstance(self.value, YulLiteral) else self.value} {self.body.fmt()}"
 
 
-class YulSwitch(StmtNode):
+class YulSwitch(YulStatement):
     cases: list["YulCase"]
     expression: "YulExpression"
 
 
-class YulVariableDeclaration(StmtNode):
-    value: Optional["YulExpression"]
-    variables: list[YulTypedName]
+class YulVariableDeclaration(YulAssignment):
+    def fmt(self) -> str:
+        return f"let {super().fmt()}"
 
 
 class YulFunctionCall(AstNode):
@@ -1310,7 +1318,7 @@ class ExternalInlineAssemblyReference(AstNode):
     suffix: Optional[AssemblyReferenceSuffix]
 
 
-class InlineAssembly(StmtNode):
+class InlineAssembly(Statement):
     ast: YulBlock
     external_references: list[ExternalInlineAssemblyReference]
     flags: list[InlineAssemblyFlag]
@@ -1328,22 +1336,22 @@ class InlineAssembly(StmtNode):
 
     def fmt(self) -> str:
         flag_str = (
-            f'("memory-safe")' if InlineAssemblyFlag.MemorySafe in self.flags else ""
+            f'("memory-safe") ' if InlineAssemblyFlag.MemorySafe in self.flags else ""
         )
-        return f"assembly {flag_str} {self.ast.fmt()}"
+        return f"assembly {flag_str}{self.ast.fmt()}"
 
 
-class PlaceholderStatement(Statement):
+class PlaceholderStatement(LineStatement):
     def fmt(self) -> str:
         return "_"
 
 
-class Return(Statement):
+class Return(LineStatement):
     expression: Optional[Expression]
     function_return_parameters: AstId
 
 
-class RevertStatement(Statement):
+class RevertStatement(LineStatement):
     error_call: FunctionCall
 
 
@@ -1487,13 +1495,15 @@ class FunctionDefinition(AstNode):
             raise NotImplemented()
         elif self.kind == FunctionKind.Receive:
             raise NotImplemented()
-        name = f"function {self.name}{self.parameters.fmt()} {self.visibility.value} {self.state_mutability.value}"
+        name = f"function {self.name}{self.parameters.fmt()} {self.visibility.value}"
+        if self.state_mutability.value:
+            name += f" {self.state_mutability.value}"
         if self.is_virtual:
             name += " virtual"
-        if self.return_parameters.parameters:
-            name += f" returns {self.return_parameters.fmt()}"
         if self.overrides:
             name += f"override {self.overrides.fmt()}"
+        if self.return_parameters.parameters:
+            name += f" returns {self.return_parameters.fmt()}"
         if self.body:
             body = self.body.fmt()
         else:
@@ -1528,6 +1538,20 @@ class UserDefinedValueTypeDefinition(AstNode):
 class InheritanceSpecifier(AstNode):
     arguments: list[Expression]
     base_name: UserDefinedTypeNameOrIdentifierPath
+
+    def __init__(
+        self,
+        base_name: UserDefinedTypeNameOrIdentifierPath,
+        arguments: list[Expression] = [],
+    ):
+        super().__init__()
+        self.base_name = base_name
+        self.arguments = arguments
+
+    def fmt(self) -> str:
+        if self.arguments:
+            return f"{self.base_name.fmt()}({', '.join(arg.fmt() for arg in self.arguments)})"
+        return self.base_name.fmt()
 
 
 class ContractDefinition(AstNode):

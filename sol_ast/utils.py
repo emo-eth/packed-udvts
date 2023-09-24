@@ -12,7 +12,7 @@ T = TypeVar("T")
 
 
 def wrap_block(nodes: Iterable[SerializableNode], semicolon: bool) -> Iterable[str]:
-    return chain("{", indent(x.fmt() + ";" if semicolon else "" for x in nodes), "}")
+    return chain("{", indent(x.fmt() + (";" if semicolon else "") for x in nodes), "}")
 
 
 def indent(lines: Iterable[str], indent: int = 0) -> Iterable[str]:
