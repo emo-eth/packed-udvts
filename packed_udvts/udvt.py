@@ -1,10 +1,39 @@
+from itertools import chain
+from tkinter import Variable
+
 from packed_udvts.member import Member
 from packed_udvts.region import Region
-from typing import Union, Literal
+from typing import Iterable, Union, Literal
 from dataclasses import dataclass
-from packed_udvts.constant_declaration import ConstantDeclaration
 from math import ceil, log2
 from typing import Optional
+
+from sol_ast.ast import (
+    Block,
+    ContractDefinition,
+    ElementaryTypeName,
+    ErrorDefinition,
+    FunctionDefinition,
+    FunctionIdentifierPath,
+    Identifier,
+    InlineAssembly,
+    License,
+    ParameterList,
+    PragmaDirective,
+    SourceUnit,
+    UserDefinedTypeName,
+    UserDefinedValueTypeDefinition,
+    UsingForDirective,
+    VariableDeclaration,
+    VariableDeclarationStatement,
+    YulAssignment,
+    YulBlock,
+    YulExpression,
+    YulIdentifier,
+    yul_or,
+    yul_shl,
+)
+from sol_ast.enums import ContractKind, StateMutability
 
 # for packed UDVTs, only allow bytes32 and unsigned integers
 # bytesN are left-aligned, so right-aligned uints are preferable
@@ -47,9 +76,9 @@ VALID_LITERAL_VALUE_TYPES = Union[
 
 @dataclass
 class UserDefinedValueType:
-    name: str
+    name: UserDefinedTypeName
     regions: list[Region]
-    value_type: VALID_LITERAL_VALUE_TYPES
+    value_type: ElementaryTypeName
 
     def __init__(
         self,
@@ -59,9 +88,9 @@ class UserDefinedValueType:
     ):
         assert len(regions) > 0, "UDVTs must have at least one region"
         assert value_type in ["uint256", "bytes32"], "UDVTs must be uint256 or bytes32"
-        self.name = name
+        self.name = UserDefinedTypeName(name=name)
         self.regions = regions
-        self.value_type = value_type
+        self.value_type = ElementaryTypeName(value_type)
 
     @staticmethod
     def from_members(
@@ -98,7 +127,13 @@ class UserDefinedValueType:
         # extend with the packed members, each named index0, index1, etc.
         members.extend(
             [
-                Member(name=f"index{i}", width_bits=u.width_bits, custom_typestr=u.name)
+                Member(
+                    name=f"index{i}",
+                    width_bits=u.width_bits,
+                    custom_typestr=u.name
+                    if isinstance(u, UserDefinedValueType)
+                    else None,
+                )
                 for i in range(number_to_pack)
             ]
         )
@@ -117,90 +152,125 @@ class UserDefinedValueType:
         )
 
     @property
-    def type_declaration(self):
+    def type_declaration(self) -> UserDefinedValueTypeDefinition:
         """Get the type declaration for this UDVT"""
+        return UserDefinedValueTypeDefinition(
+            name=self.name.name, underlying_type=self.value_type
+        )
         return f"type {self.name} is {self.value_type};"
 
     @property
-    def using_declaration(self):
+    def using_declaration(self) -> UsingForDirective:
         """Get the using declaration for this UDVT"""
-        return f"using {self.name}Type for {self.name} global;"
+        return UsingForDirective(
+            function_list=[FunctionIdentifierPath(self.lib_name.to_identifier_path())],
+            type_name=self.name,
+            global_=True,
+        )
 
-    def create_declaration(self, typesafe: bool = True):
-        """Get the declaration for this UDVT
-        TODO: investigate the effect ordering of parameters has on bytecode"""
-        initial = f"self := {self.regions[0].member.shadowed_name}"
+    def create_declaration(self, typesafe: bool = True) -> FunctionDefinition:
+        """Get the creation method for this UDVT"""
+        initial_assigment = YulAssignment(
+            YulIdentifier("self"), value=self.regions[0].assembly_representation
+        )
         other_regions = []
         for r in self.regions[1:]:
-            if r.member.bytesN is None:
-                expression_to_shl_then_or = r.member.shadowed_name
-            else:
-                assert (
-                    r.member.num_expansion_bits is not None
-                ), "Member must have num_expansion_bits if not bytesN"
-                expression_to_shl_then_or = (
-                    f"shr({r.member.num_expansion_bits}, {r.member.shadowed_name})"
-                )
-            other_regions.append(
-                f"self := or(self, shl({r.offset_bits_name}, {expression_to_shl_then_or}))"
-            )
-        remaining = "\n        ".join(other_regions)
-        return f"""
-function create{self.name}({', '.join(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)}) internal pure returns ({self.name} self) {{
-    assembly {{
-        {initial}
-        {remaining}
-    }}
-}}"""
+            expression_to_shl_then_or: YulExpression = r.assembly_representation
 
-    def unpack_declaration(self, typesafe: bool = True):
+            other_regions.append(
+                YulAssignment(
+                    YulIdentifier("self"),
+                    value=yul_or(
+                        YulIdentifier("self"),
+                        yul_shl(
+                            r.offset_bits_name.to_yul_identifier(),
+                            expression_to_shl_then_or,
+                        ),
+                    ),
+                )
+            )
+
+        buffer_declaration = self.regions[0].err_buf_declaration()
+        checks = (r.buffer_check() for r in self.regions)
+        assertion = self.regions[0].assert_buffer()
+        return FunctionDefinition(
+            name=f"create{self.name}",
+            parameters=ParameterList(
+                *(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)
+            ),
+            return_parameters=ParameterList(
+                VariableDeclaration(name=Identifier("self"), type_name=self.name)
+            ),
+            state_mutability=StateMutability.Pure,
+            body=Block(
+                buffer_declaration,
+                *checks,
+                assertion,
+                InlineAssembly(YulBlock(initial_assigment, *other_regions)),
+            ),
+        )
+
+    def unpack_declaration(self, typesafe: bool = True) -> FunctionDefinition:
         """Get the unpack declaration for this UDVT
         TODO: investigate the effect ordering of return values has on bytecode"""
-        assignments = []
-        for r in self.regions:
-            assignments.append(r._shift_and_unmask())
-        assignment_strs = "\n        ".join(assignments)
-        return f"""
-function unpack{self.name}({self.name} self) internal pure returns ({', '.join(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)}) {{
-    assembly {{
-        {assignment_strs}
-    }}
-}}"""
+        return FunctionDefinition(
+            name=f"unpack{self.name}",
+            parameters=ParameterList(
+                VariableDeclaration(name=Identifier("self"), type_name=self.name)
+            ),
+            return_parameters=ParameterList(
+                *(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)
+            ),
+            state_mutability=StateMutability.Pure,
+            body=Block(
+                InlineAssembly(
+                    YulBlock(*(r._shift_and_unmask_statement() for r in self.regions))
+                )
+            ),
+        )
 
-    def library_declaration(self, typesafe: bool = True):
+    def library_declaration(self, typesafe: bool = True) -> ContractDefinition:
         """Get the library declaration for this UDVT"""
-        constants_declarations: list[ConstantDeclaration] = []
-        for r in self.regions:
-            constants_declarations.extend(r.get_constant_declarations())
-        constants_set = set(constants_declarations)
-        constants_str = "\n    ".join(sorted(x.render() for x in constants_set))
-        getters = "\n".join(
-            x.getter(udt_name=self.name, typesafe=typesafe) for x in self.regions
+        constants_declarations: Iterable[VariableDeclarationStatement] = chain(
+            (
+                VariableDeclarationStatement(assignments=[v], initial_value=None)
+                for r in self.regions
+                for v in r.get_constant_declarations()
+            )
         )
-        setters = "\n".join(
-            x.setter(udt_name=self.name, typesafe=typesafe) for x in self.regions
+
+        return ContractDefinition(
+            *constants_declarations,
+            ErrorDefinition("UnsafeValue", ParameterList()),
+            self.create_declaration(typesafe=typesafe),
+            self.unpack_declaration(typesafe=typesafe),
+            *(r.getter(udt_name=self.name, typesafe=typesafe) for r in self.regions),
+            *(r.setter(udt_name=self.name, typesafe=typesafe) for r in self.regions),
+            name=self.lib_name.name,
+            kind=ContractKind.Library,
         )
-        return f"""
-library {self.name}Type {{
-    {constants_str}
 
-    {self.create_declaration(typesafe=typesafe)}
-
-    {self.unpack_declaration(typesafe=typesafe)}
-
-    {getters}
-
-    {setters}
-}}"""
-
-    def render_file(self, typesafe: bool = True):
+    def render_file(self, typesafe: bool = True) -> SourceUnit:
         """Render the file for this UDVT"""
-        return f"""// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+        return SourceUnit(
+            PragmaDirective(["solidity", "^0.8.20"]),
+            self.type_declaration,
+            self.using_declaration,
+            self.library_declaration(typesafe=typesafe),
+            license=License("MIT"),
+        )
 
-{self.type_declaration}
+    @property
+    def var_name(self) -> Identifier:
+        """Get the name of the variable for this UDVT"""
+        return Identifier(self.name.name[0].lower() + self.name.name[1:])
 
-{self.using_declaration}
+    @property
+    def declaration(self) -> VariableDeclaration:
+        """Get the declaration for this UDVT"""
+        return VariableDeclaration(type_name=self.name, name=self.var_name)
 
-{self.library_declaration(typesafe=typesafe)}
-"""
+    @property
+    def lib_name(self) -> Identifier:
+        """Get the library name for this UDVT"""
+        return Identifier(f"{self.name}Type")
