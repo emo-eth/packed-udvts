@@ -93,6 +93,7 @@ class TestGen:
             region.member.safe_typestr, updated_member_var_name
         )
 
+        # TODO: fuzz on member.width_bits, bound to 2**member.width_bits, then expand and cast to appropriate type
         all_region_bounds = chain(
             (r.member.get_bounds() for r in self.udvt.regions),
             (region.member.get_bounds(updated_member_var_name),),

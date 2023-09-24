@@ -24,6 +24,22 @@ library UDVTType {
     uint256 constant QUX_EMPTY_MASK = 0x1;
 
     function createUDVT(int24 _foo, bytes4 _bar, uint72 _baz, uint32 _qux) internal pure returns (UDVT self) {
+        bool err;
+        assembly {
+            let compacted := shr(FOO_EXPANSION_BITS, _foo)
+            err := or(gt(and(_foo, FOO_EMPTY_MASK), 0), gt(compacted, _8_BIT_END_MASK))
+        }
+        assembly {
+            let compacted := shr(BAR_EXPANSION_BITS, _bar)
+            err := gt(compacted, _31_BIT_END_MASK)
+        }
+        assembly {
+            err := gt(_baz, BAZ_NOT_MASK)
+        }
+        assembly {
+            err := gt(and(_qux, QUX_EMPTY_MASK), 0)
+        }
+        require(!(err), "Unsafe value");
         assembly {
             self :=
                 or(
@@ -104,7 +120,11 @@ library UDVTType {
     }
 
     function setBaz(UDVT self, uint72 _baz) internal pure returns (UDVT updated) {
-        require(_baz <= _69_BIT_END_MASK, "baz value too large");
+        bool err;
+        assembly {
+            err := gt(_baz, BAZ_NOT_MASK)
+        }
+        require(!(err), "Unsafe value");
         assembly {
             updated := or(and(self, BAZ_NOT_MASK), shl(BAZ_OFFSET, _baz))
         }

@@ -253,28 +253,28 @@ class Region:
     def typesafe_require(self) -> Iterable[Statement]:
         """Get the require statement for this member"""
         # TODO: very inefficient; optimize by reusing masked values
-        initial_cast_statements: list[Statement] = []
-        if self.member.bytesN is not None:
-            if self.expansion_bits_name:
-                return self.signed_typesafe_require()
-            else:
-                return []
-        elif self.member.signed:
-            return self.signed_typesafe_require()
-        elif self.expansion_bits_name:
-            return self.expanded_typesafe_require()
-        else:
-            require_predicate = BinaryOperation(
-                self.member.shadowed_name,
-                BinaryOperator.LessThanOrEqual,
-                self.end_mask_name,
-            )
-        return initial_cast_statements + [
-            self.assertion(
-                require_predicate,
-                Literal(f"{self.member.name} value too large", LiteralKind.String),
+        err_buf_declaration = self.err_buf_declaration()
+        buffer_check = self.buffer_check()
+        error = Literal("Unsafe value", LiteralKind.String)
+        assertion = self.assertion(
+            UnaryOperation(
+                UnaryOperator.Not,
+                True,
+                Identifier("err"),
             ),
-        ]
+            error,
+        )
+        return [err_buf_declaration, buffer_check, assertion]
+
+    def assert_buffer(self) -> Statement:
+        return self.assertion(
+            UnaryOperation(
+                UnaryOperator.Not,
+                True,
+                Identifier("err"),
+            ),
+            Literal("Unsafe value", LiteralKind.String),
+        )
 
     def assertion(self, predicate: Expression, error: Expression) -> Statement:
         return ExpressionStatement(
@@ -286,6 +286,61 @@ class Region:
                     error,
                 ],
             )
+        )
+
+    def err_buf_declaration(self) -> VariableDeclarationStatement:
+        return VariableDeclarationStatement(
+            assignments=[
+                VariableDeclaration(
+                    type_name=ElementaryTypeName("bool"), name=Identifier("err")
+                )
+            ],
+            initial_value=None,
+        )
+
+    def buffer_check(self) -> Statement:
+        if self.member.bytesN is not None and self.expansion_bits_name:
+            return self.signed_check_err_predicate()
+        elif self.member.signed:
+            return self.signed_check_err_predicate()
+        elif self.expansion_bits_name:
+            return self.expanded_check_err_predicate()
+        else:
+            return self.standard_check_err_predicate()
+
+    def signed_check_err_predicate(self) -> Statement:
+        return InlineAssembly(YulBlock(*self.signed_check_assembly()))
+
+    def expanded_check_err_predicate(self) -> Statement:
+        err_name = YulIdentifier("err")
+        check = self.check_empty_region(self.member.shadowed_name.to_yul_identifier())
+        if check is None:
+            raise ValueError("Cannot check expansion of non-expanded member")
+        err_assign = YulAssignment(err_name, value=check)
+
+        return InlineAssembly(YulBlock(err_assign))
+
+    def standard_check_err_predicate(self) -> Statement:
+        err_name = YulIdentifier("err")
+        return InlineAssembly(
+            YulBlock(
+                YulAssignment(
+                    err_name,
+                    value=yul_gt(
+                        self.member.shadowed_name.to_yul_identifier(),
+                        self.not_mask_name.to_yul_identifier(),
+                    ),
+                )
+            )
+        )
+
+        return VariableDeclarationStatement(
+            [err_name],
+            initial_value=BinaryOperation(
+                self.member.shadowed_name,
+                BinaryOperator.LessThanOrEqual,
+                self.end_mask_name,
+            ),
         )
 
     def signed_typesafe_require(self) -> list[Statement]:
@@ -300,7 +355,7 @@ class Region:
             [err_var],
             initial_value=None,
         )
-        assembly = InlineAssembly(YulBlock(*self.signed_check_assembly()))
+        assembly = self.signed_check_err_predicate()
         predicate = UnaryOperation(
             operator=UnaryOperator.Not,
             prefix=True,
@@ -346,12 +401,7 @@ class Region:
             initial_value=None,
         )
 
-        check = self.check_empty_region(self.member.shadowed_name.to_yul_identifier())
-        if check is None:
-            raise ValueError("Cannot check expansion of non-expanded member")
-        err_assign = YulAssignment(err_name.to_yul_identifier(), value=check)
-
-        assembly = InlineAssembly(YulBlock(err_assign))
+        assembly = self.expanded_check_err_predicate()
         predicate = UnaryOperation(
             operator=UnaryOperator.Not,
             prefix=True,

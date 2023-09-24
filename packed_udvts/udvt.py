@@ -170,8 +170,7 @@ class UserDefinedValueType:
         )
 
     def create_declaration(self, typesafe: bool = True) -> FunctionDefinition:
-        """Get the declaration for this UDVT
-        TODO: investigate the effect ordering of parameters has on bytecode"""
+        """Get the creation method for this UDVT"""
         initial_assigment = YulAssignment(
             YulIdentifier("self"), value=self.regions[0].assembly_representation
         )
@@ -191,7 +190,10 @@ class UserDefinedValueType:
                     ),
                 )
             )
-        # TODO: no bounds here?
+
+        buffer_declaration = self.regions[0].err_buf_declaration()
+        checks = (r.buffer_check() for r in self.regions)
+        assertion = self.regions[0].assert_buffer()
         return FunctionDefinition(
             name=f"create{self.name}",
             parameters=ParameterList(
@@ -201,7 +203,12 @@ class UserDefinedValueType:
                 VariableDeclaration(name=Identifier("self"), type_name=self.name)
             ),
             state_mutability=StateMutability.Pure,
-            body=Block(InlineAssembly(YulBlock(initial_assigment, *other_regions))),
+            body=Block(
+                buffer_declaration,
+                *checks,
+                assertion,
+                InlineAssembly(YulBlock(initial_assigment, *other_regions)),
+            ),
         )
 
     def unpack_declaration(self, typesafe: bool = True) -> FunctionDefinition:
