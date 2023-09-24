@@ -4,6 +4,7 @@ from typing import Iterable, Optional, cast
 
 from packed_udvts.member import Member
 from sol_ast.ast import (
+    BinaryOperation,
     Block,
     ElementaryTypeName,
     FunctionCall,
@@ -35,6 +36,7 @@ from sol_ast.ast import (
     Expression,
 )
 from sol_ast.enums import (
+    BinaryOperator,
     FunctionCallKind,
     LiteralKind,
     Mutability,
@@ -70,17 +72,78 @@ class Region:
         return Identifier(f"_{self.member.width_bits}_BIT_END_MASK")
 
     @property
-    def not_mask(self) -> Literal:
+    def not_mask(self, bytecode_minimal: bool = False) -> Expression:
         """Get the 256-bit not-mask for this member; it should have 0 bits where the member is, and 1 bits everywhere else
         It should return a hex string starting with 0x and contain 64 hex characters"""
-        # lol, lmao
-        mask = int(
-            "1" * (256 - self.offset_bits - self.member.width_bits)
-            + "0" * self.member.width_bits
-            + "1" * self.offset_bits,
-            2,
+
+        if not bytecode_minimal:
+            # lol, lmao
+            mask = int(
+                "1" * (256 - self.offset_bits - self.member.width_bits)
+                + "0" * self.member.width_bits
+                + "1" * self.offset_bits,
+                2,
+            )
+
+            return Literal(value=hex(mask), kind=LiteralKind.HexNumber)
+
+        if self.offset_bits:
+            exp = BinaryOperation(
+                operator=BinaryOperator.Sub,
+                lhs=Literal(value="256", kind=LiteralKind.Number),
+                rhs=BinaryOperation(
+                    operator=BinaryOperator.Add,
+                    lhs=self.offset_bits_name,
+                    rhs=self.width_bits_name,
+                ),
+            )
+        else:
+            exp = BinaryOperation(
+                operator=BinaryOperator.Sub,
+                lhs=Literal(value="256", kind=LiteralKind.Number),
+                rhs=self.width_bits_name,
+            )
+
+        top_bits_exp = BinaryOperation(
+            operator=BinaryOperator.Shl,
+            lhs=Literal(value="1", kind=LiteralKind.Number),
+            rhs=exp,
         )
-        return Literal(value=hex(mask), kind=LiteralKind.HexNumber)
+        top_bits = BinaryOperation(
+            operator=BinaryOperator.Sub,
+            lhs=top_bits_exp,
+            rhs=Literal(value="1", kind=LiteralKind.Number),
+        )
+        if self.offset_bits:
+            top_bits_shift = BinaryOperation(
+                operator=BinaryOperator.Add,
+                lhs=self.offset_bits_name,
+                rhs=self.width_bits_name,
+            )
+            top = BinaryOperation(
+                operator=BinaryOperator.Shl,
+                lhs=top_bits,
+                rhs=top_bits_shift,
+            )
+        else:
+            top = top_bits
+        if self.offset_bits:
+            bottom_bits = BinaryOperation(
+                operator=BinaryOperator.Sub,
+                rhs=Literal(value="1", kind=LiteralKind.Number),
+                lhs=BinaryOperation(
+                    operator=BinaryOperator.Shl,
+                    lhs=Literal("1", LiteralKind.Number),
+                    rhs=self.offset_bits_name,
+                ),
+            )
+            return BinaryOperation(
+                operator=BinaryOperator.BitOr,
+                lhs=top,
+                rhs=bottom_bits,
+            )
+        else:
+            return top
 
     @property
     def width_bits(self) -> Literal:
@@ -417,6 +480,12 @@ class Region:
                 )
                 if self.empty_mask_name
                 else None,
+                VariableDeclaration(
+                    mutability=Mutability.Constant,
+                    type_name=ElementaryTypeName("uint256"),
+                    name=self.width_bits_name,
+                    value=self.width_bits,
+                ),
             ]
             if x
         ]

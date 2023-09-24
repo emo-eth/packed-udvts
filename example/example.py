@@ -26,7 +26,7 @@ import os
 os.makedirs("src/lib", exist_ok=True)
 
 with open("src/lib/UDVTType.sol", "w") as f:
-    f.write(u.render_file().fmt())
+    f.write(u.render_file(typesafe=False).fmt())
 
 
 with open("test/foundry/UDVT.t.sol", "w") as f:
