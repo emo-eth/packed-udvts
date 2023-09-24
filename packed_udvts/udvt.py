@@ -1,4 +1,5 @@
 from itertools import chain
+from tkinter import Variable
 
 from packed_udvts.member import Member
 from packed_udvts.region import Region
@@ -11,6 +12,7 @@ from sol_ast.ast import (
     Block,
     ContractDefinition,
     ElementaryTypeName,
+    ErrorDefinition,
     FunctionDefinition,
     FunctionIdentifierPath,
     Identifier,
@@ -26,15 +28,12 @@ from sol_ast.ast import (
     VariableDeclarationStatement,
     YulAssignment,
     YulBlock,
-    Literal as SolLiteral,
     YulExpression,
     YulIdentifier,
-    yul_shr,
     yul_or,
     yul_shl,
-    YulLiteral,
 )
-from sol_ast.enums import ContractKind, LiteralKind, StateMutability
+from sol_ast.enums import ContractKind, StateMutability
 
 # for packed UDVTs, only allow bytes32 and unsigned integers
 # bytesN are left-aligned, so right-aligned uints are preferable
@@ -242,6 +241,7 @@ class UserDefinedValueType:
 
         return ContractDefinition(
             *constants_declarations,
+            ErrorDefinition("UnsafeValue", ParameterList()),
             self.create_declaration(typesafe=typesafe),
             self.unpack_declaration(typesafe=typesafe),
             *(r.getter(udt_name=self.name, typesafe=typesafe) for r in self.regions),

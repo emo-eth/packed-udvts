@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Iterable, Optional, cast
 
 
 from packed_udvts.member import Member
@@ -11,9 +11,11 @@ from sol_ast.ast import (
     FunctionCall,
     FunctionDefinition,
     Identifier,
+    IfStatement,
     InlineAssembly,
     Literal,
     ParameterList,
+    RevertStatement,
     Statement,
     TypeName,
     UnaryOperation,
@@ -232,12 +234,15 @@ class Region:
         """Get the assembly for checking if the empty bits are empty"""
         if self.empty_mask_name is None:
             return None
-        return yul_gt(
-            yul_and(
-                value,
-                self.empty_mask_name.to_yul_identifier(),
-            ),
-            YulLiteral("0"),
+        return yul_iszero(
+            yul_iszero(
+                (
+                    yul_and(
+                        value,
+                        self.empty_mask_name.to_yul_identifier(),
+                    )
+                )
+            )
         )
 
     def check_signed_fits(self, value: YulExpression) -> YulExpression:
@@ -256,37 +261,21 @@ class Region:
         err_buf_declaration = self.err_buf_declaration()
         buffer_check = self.buffer_check()
         error = Literal("Unsafe value", LiteralKind.String)
-        assertion = self.assertion(
-            UnaryOperation(
-                UnaryOperator.Not,
-                True,
-                Identifier("err"),
-            ),
-            error,
-        )
+        assertion = self.assert_buffer()
         return [err_buf_declaration, buffer_check, assertion]
 
     def assert_buffer(self) -> Statement:
         return self.assertion(
-            UnaryOperation(
-                UnaryOperator.Not,
-                True,
-                Identifier("err"),
+            Identifier("err"),
+            FunctionCall(
+                Identifier("UnsafeValue"),
+                kind=FunctionCallKind.FunctionCall,
+                arguments=[],
             ),
-            Literal("Unsafe value", LiteralKind.String),
         )
 
     def assertion(self, predicate: Expression, error: Expression) -> Statement:
-        return ExpressionStatement(
-            FunctionCall(
-                Identifier("require"),
-                kind=FunctionCallKind.FunctionCall,
-                arguments=[
-                    predicate,
-                    error,
-                ],
-            )
-        )
+        return IfStatement(predicate, Block(RevertStatement(cast(FunctionCall, error))))
 
     def err_buf_declaration(self) -> VariableDeclarationStatement:
         return VariableDeclarationStatement(
@@ -334,38 +323,6 @@ class Region:
             )
         )
 
-        return VariableDeclarationStatement(
-            [err_name],
-            initial_value=BinaryOperation(
-                self.member.shadowed_name,
-                BinaryOperator.LessThanOrEqual,
-                self.end_mask_name,
-            ),
-        )
-
-    def signed_typesafe_require(self) -> list[Statement]:
-        if not (self.member.signed or self.member.bytesN):
-            raise ValueError("Cannot check sign of unsigned member")
-        err_name = Identifier("err")
-        err_var = VariableDeclaration(
-            type_name=ElementaryTypeName("bool"),
-            name=err_name,
-        )
-        err_buff = VariableDeclarationStatement(
-            [err_var],
-            initial_value=None,
-        )
-        assembly = self.signed_check_err_predicate()
-        predicate = UnaryOperation(
-            operator=UnaryOperator.Not,
-            prefix=True,
-            sub_expression=err_name,
-        )
-        error = Literal("Unsafe value", LiteralKind.String)
-        assertion = self.assertion(predicate, error)
-
-        return [err_buff, assembly, assertion]
-
     def signed_check_assembly(self) -> list[YulStatement]:
         if not (self.member.signed or self.member.bytesN):
             raise ValueError("Cannot check sign of unsigned member")
@@ -387,29 +344,6 @@ class Region:
         err_assignment = YulAssignment(err, value=err_value)
 
         return [declaration, err_assignment]
-
-    def expanded_typesafe_require(self) -> list[Statement]:
-        if not self.expansion_bits_name:
-            raise ValueError("Cannot check expansion of non-expanded member")
-        err_name = Identifier("err")
-        err_var = VariableDeclaration(
-            type_name=ElementaryTypeName("bool"),
-            name=err_name,
-        )
-        err_buff = VariableDeclarationStatement(
-            [err_var],
-            initial_value=None,
-        )
-
-        assembly = self.expanded_check_err_predicate()
-        predicate = UnaryOperation(
-            operator=UnaryOperator.Not,
-            prefix=True,
-            sub_expression=err_name,
-        )
-        error = Literal("Unsafe value", LiteralKind.String)
-        assertion = self.assertion(predicate, error)
-        return [err_buff, assembly, assertion]
 
     def getter(self, udt_name: TypeName, typesafe: bool = True) -> FunctionDefinition:
         """Get the function body for the getter for this member"""

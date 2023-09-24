@@ -904,14 +904,6 @@ class EnumDefinition(AstNode):
     members: list[EnumValue]
 
 
-class ErrorDefinition(AstNode):
-    name: str
-    name_location: Optional[SourceLocation]
-    documentation: Optional[StructuredDocumentation]
-    error_selector: Optional[str]
-    parameters: ParameterList
-
-
 class EventDefinition(AstNode):
     name: str
     name_location: Optional[SourceLocation]
@@ -927,6 +919,21 @@ class StmtNode(AstNode):
 
 class Statement(StmtNode):
     pass
+
+
+class ErrorDefinition(Statement):
+    name: str
+    name_location: Optional[SourceLocation]
+    documentation: Optional[StructuredDocumentation]
+    error_selector: Optional[str]
+    parameters: ParameterList
+
+    def __init__(self, name: str, parameters: ParameterList):
+        self.name = name
+        self.parameters = parameters
+
+    def fmt(self) -> str:
+        return f"error {self.name}{self.parameters.fmt()};"
 
 
 class LineStatement(Statement, metaclass=StatementChecker):
@@ -1062,6 +1069,22 @@ class IfStatement(Statement):
     condition: Expression
     false_body: Optional[BlockType]
     true_body: BlockType
+
+    def __init__(
+        self,
+        condition: Expression,
+        true_body: BlockType,
+        false_body: Optional[BlockType] = None,
+    ):
+        self.condition = condition
+        self.true_body = true_body
+        self.false_body = false_body
+
+    def fmt(self) -> str:
+        if self.false_body is None:
+            return f"if ({self.condition.fmt()})\n{self.true_body.fmt()}"
+        else:
+            return f"if ({self.condition.fmt()})\n{self.true_body.fmt()}\nelse\n{self.false_body.fmt()}"
 
 
 class YulBlock(Statement):
@@ -1363,6 +1386,12 @@ class Return(LineStatement):
 
 class RevertStatement(LineStatement):
     error_call: FunctionCall
+
+    def __init__(self, error_call: FunctionCall):
+        self.error_call = error_call
+
+    def fmt(self) -> str:
+        return f"revert {self.error_call.fmt()};"
 
 
 class TryCatchClause(AstNode):

@@ -23,11 +23,13 @@ library UDVTType {
     uint256 constant QUX_EXPANSION_BITS = 1;
     uint256 constant QUX_EMPTY_MASK = 0x1;
 
+    error UnsafeValue();
+
     function createUDVT(int24 _foo, bytes4 _bar, uint72 _baz, uint32 _qux) internal pure returns (UDVT self) {
         bool err;
         assembly {
             let compacted := shr(FOO_EXPANSION_BITS, _foo)
-            err := or(gt(and(_foo, FOO_EMPTY_MASK), 0), gt(compacted, _8_BIT_END_MASK))
+            err := or(iszero(iszero(and(_foo, FOO_EMPTY_MASK))), gt(compacted, _8_BIT_END_MASK))
         }
         assembly {
             let compacted := shr(BAR_EXPANSION_BITS, _bar)
@@ -37,9 +39,11 @@ library UDVTType {
             err := gt(_baz, BAZ_NOT_MASK)
         }
         assembly {
-            err := gt(and(_qux, QUX_EMPTY_MASK), 0)
+            err := iszero(iszero(and(_qux, QUX_EMPTY_MASK)))
         }
-        require(!(err), "Unsafe value");
+        if (err) {
+            revert UnsafeValue();
+        }
         assembly {
             self :=
                 or(
@@ -89,9 +93,11 @@ library UDVTType {
         bool err;
         assembly {
             let compacted := shr(FOO_EXPANSION_BITS, _foo)
-            err := or(gt(and(_foo, FOO_EMPTY_MASK), 0), gt(compacted, _8_BIT_END_MASK))
+            err := or(iszero(iszero(and(_foo, FOO_EMPTY_MASK))), gt(compacted, _8_BIT_END_MASK))
         }
-        require(!(err), "Unsafe value");
+        if (err) {
+            revert UnsafeValue();
+        }
         assembly {
             updated :=
                 or(
@@ -113,7 +119,9 @@ library UDVTType {
             let compacted := shr(BAR_EXPANSION_BITS, _bar)
             err := gt(compacted, _31_BIT_END_MASK)
         }
-        require(!(err), "Unsafe value");
+        if (err) {
+            revert UnsafeValue();
+        }
         assembly {
             updated := or(and(self, BAR_NOT_MASK), shl(BAR_OFFSET, shr(BAR_EXPANSION_BITS, _bar)))
         }
@@ -124,7 +132,9 @@ library UDVTType {
         assembly {
             err := gt(_baz, BAZ_NOT_MASK)
         }
-        require(!(err), "Unsafe value");
+        if (err) {
+            revert UnsafeValue();
+        }
         assembly {
             updated := or(and(self, BAZ_NOT_MASK), shl(BAZ_OFFSET, _baz))
         }
@@ -133,9 +143,11 @@ library UDVTType {
     function setQux(UDVT self, uint32 _qux) internal pure returns (UDVT updated) {
         bool err;
         assembly {
-            err := gt(and(_qux, QUX_EMPTY_MASK), 0)
+            err := iszero(iszero(and(_qux, QUX_EMPTY_MASK)))
         }
-        require(!(err), "Unsafe value");
+        if (err) {
+            revert UnsafeValue();
+        }
         assembly {
             updated := or(and(self, QUX_NOT_MASK), shl(QUX_OFFSET, shr(QUX_EXPANSION_BITS, _qux)))
         }
