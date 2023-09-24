@@ -24,31 +24,37 @@ class TestUserDefinedValueType(TestCase):
         self.maxDiff = 6969
 
     def test_type_declaration(self):
-        self.assertEqual(self.u.type_declaration, "type UDVT is uint256;")
+        self.assertEqual(self.u.type_declaration.fmt(), "type UDVT is uint256;")
         self.u = UserDefinedValueType(
             name="Foo", regions=[foo_region], value_type="bytes32"
         )
-        self.assertEqual(self.u.type_declaration, "type Foo is bytes32;")
+        self.assertEqual(self.u.type_declaration.fmt(), "type Foo is bytes32;")
         with self.assertRaises(AssertionError):
             UserDefinedValueType(name="Foo", regions=[foo_region], value_type="uint128")  # type: ignore
 
     def test_using_declaration(self):
-        self.assertEqual(self.u.using_declaration, "using UDVTType for UDVT global;")
+        self.assertEqual(
+            self.u.using_declaration.fmt(), "using UDVTType for UDVT global;"
+        )
         self.u = UserDefinedValueType(
             name="Foo", regions=[foo_region], value_type="bytes32"
         )
-        self.assertEqual(self.u.using_declaration, "using FooType for Foo global;")
+        self.assertEqual(
+            self.u.using_declaration.fmt(), "using FooType for Foo global;"
+        )
 
     def test_create_declaration(self):
         create_declaration = f"""
 function createUDVT(int8 _foo, bytes4 _bar, uint72 _baz) internal pure returns (UDVT self) {{
 assembly {{
-self := _foo
+self := or(shl(7, gt(_foo, _8_BIT_END_MASK)), and(_foo, _8_BIT_END_MASK))
 self := or(self, shl(BAR_OFFSET, shr(224, _bar)))
 self := or(self, shl(BAZ_OFFSET, _baz))
 }}
 }}"""
-        self.assertEqual(self.u.create_declaration(typesafe=True), create_declaration)
+        self.assertEqual(
+            self.u.create_declaration(typesafe=True).fmt(), create_declaration.strip()
+        )
 
     def test_unpack_declaration(self):
         create_declaration = f"""
@@ -59,7 +65,18 @@ _bar := shl(BAR_EXPANSION_BITS, and(shr(BAR_OFFSET, self), _31_BIT_END_MASK))
 _baz := and(shr(BAZ_OFFSET, self), _69_BIT_END_MASK)
 }}
 }}"""
-        self.assertEqual(self.u.unpack_declaration(typesafe=True), create_declaration)
+        result = self.u.unpack_declaration(typesafe=True).fmt()
+        self.assertEqual(result, create_declaration.strip())
+        create_declaration = f"""
+function unpackUDVT(UDVT self) internal pure returns (int256 _foo, bytes32 _bar, uint256 _baz) {{
+assembly {{
+_foo := signextend(0, and(self, _8_BIT_END_MASK))
+_bar := shl(BAR_EXPANSION_BITS, and(shr(BAR_OFFSET, self), _31_BIT_END_MASK))
+_baz := and(shr(BAZ_OFFSET, self), _69_BIT_END_MASK)
+}}
+}}"""
+        result = self.u.unpack_declaration(typesafe=False).fmt()
+        self.assertEqual(result, create_declaration.strip())
 
     # def test_library_declaration(self):
     #     library_declaration = f""""""

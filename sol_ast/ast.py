@@ -1520,7 +1520,7 @@ class StructDefinition(AstNode):
     visibility: Visibility
 
 
-class UserDefinedValueTypeDefinition(AstNode):
+class UserDefinedValueTypeDefinition(Statement):
     name: str
     name_location: Optional[SourceLocation]
     canonical_name: Optional[str]
@@ -1533,6 +1533,9 @@ class UserDefinedValueTypeDefinition(AstNode):
 
     def user_defined_type_name(self):
         return UserDefinedTypeName(self.name, referenced_declaration=self.id)
+
+    def fmt(self) -> str:
+        return f"type {self.name} is {self.underlying_type.fmt()};"
 
 
 class InheritanceSpecifier(AstNode):

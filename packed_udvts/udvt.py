@@ -1,7 +1,5 @@
 from itertools import chain
-from pyclbr import Function
 
-from backoff import constant
 from packed_udvts.member import Member
 from packed_udvts.region import Region
 from typing import Iterable, Union, Literal
@@ -32,7 +30,7 @@ from sol_ast.ast import (
     yul_shl,
     YulLiteral,
 )
-from sol_ast.enums import ContractKind
+from sol_ast.enums import ContractKind, StateMutability
 
 # for packed UDVTs, only allow bytes32 and unsigned integers
 # bytesN are left-aligned, so right-aligned uints are preferable
@@ -208,6 +206,7 @@ class UserDefinedValueType:
             return_parameters=ParameterList(
                 VariableDeclaration(name="self", type_name=self.name)
             ),
+            state_mutability=StateMutability.Pure,
             body=Block(InlineAssembly(YulBlock(initial_assigment, *other_regions))),
         )
 
@@ -222,7 +221,12 @@ class UserDefinedValueType:
             return_parameters=ParameterList(
                 *(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)
             ),
-            body=Block(*(r._shift_and_unmask() for r in self.regions)),
+            state_mutability=StateMutability.Pure,
+            body=Block(
+                InlineAssembly(
+                    YulBlock(*(r._shift_and_unmask_statement() for r in self.regions))
+                )
+            ),
         )
 
     def library_declaration(self, typesafe: bool = True) -> ContractDefinition:

@@ -5,9 +5,7 @@ from typing import Iterable, Optional
 
 from numpy import block
 from packed_udvts.member import Member
-from packed_udvts.util import to_statements
 from sol_ast.ast import (
-    Assignment,
     BinaryOperation,
     Block,
     ElementaryTypeName,
@@ -18,13 +16,13 @@ from sol_ast.ast import (
     InlineAssembly,
     Literal,
     ParameterList,
-    LineStatement,
     Statement,
     TypeName,
     VariableDeclaration,
     YulAssignment,
     YulBlock,
     YulExpression,
+    YulStatement,
     yul_gt,
     yul_or,
     yul_and,
@@ -274,11 +272,14 @@ updated := or({masked_lhs}, {rhs})
                 )
             ),
             state_mutability=StateMutability.Pure,
-            body=Block(self._shift_and_unmask()),
+            body=Block(self._shift_and_unmask_block()),
         )
 
-    def _shift_and_unmask(self) -> InlineAssembly:
+    def _shift_and_unmask_block(self) -> InlineAssembly:
         """Get the assembly for shifting and unmasking this member"""
+        return InlineAssembly(YulBlock(self._shift_and_unmask_statement()))
+
+    def _shift_and_unmask_statement(self) -> YulStatement:
         expression_to_mask: YulExpression
         if self.offset_bits == 0:
             expression_to_mask = YulIdentifier("self")
@@ -301,10 +302,7 @@ updated := or({masked_lhs}, {rhs})
                 )
             else:
                 rhs = masked_expression
-        assignment = YulAssignment(
-            self.member.shadowed_name.to_yul_identifier(), value=rhs
-        )
-        return InlineAssembly(YulBlock(assignment))
+        return YulAssignment(self.member.shadowed_name.to_yul_identifier(), value=rhs)
 
     def get_constant_declarations(self) -> list[VariableDeclaration]:
         """Get the constant declarations for this member"""
