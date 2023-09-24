@@ -7,7 +7,7 @@ This is a very experimental Python library for generating libaries for efficient
 A `Member` is the basic unit of a `UserDefinedValueType`. Its simplified declaration is as follows:
 
 ```python
-@dataclass
+dataclass
 class Member:
     # snake-case name of this member; will be converted to title case for the getter and setter
     # and upper-cased for constants
@@ -33,3 +33,7 @@ A region is a wrapper around a `Member` object, which additionally stores an `of
 A `UserDefinedValueType` is the top-level abstraction, and includes helper functions such as the static `UserDefinedValueType.from_members(members: list[Member], name: str)` method, which can be used to generate a `UserDefinedValueType` from a list of `Member` objects (by first converting them into `Region` objects).
 
 It also includes the method `render_file(typesafe:bool=True)` which is used to generate a Solidity file containing the generated library.
+
+# TestGen
+
+The `TestGen` class takes a `UserDefinedValueType` and generates a Solidity file containing tests for the generated library. It is used to ensure that the generated library is correct.
