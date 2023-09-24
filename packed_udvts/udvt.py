@@ -168,7 +168,6 @@ class UserDefinedValueType:
             type_name=self.name,
             global_=True,
         )
-        return f"using {self.name}Type for {self.name} global;"
 
     def create_declaration(self, typesafe: bool = True) -> FunctionDefinition:
         """Get the declaration for this UDVT
@@ -178,16 +177,7 @@ class UserDefinedValueType:
         )
         other_regions = []
         for r in self.regions[1:]:
-            if r.member.bytesN is None:
-                expression_to_shl_then_or: YulExpression = r.assembly_representation
-            else:
-                assert (
-                    r.expansion_bits_name is not None
-                ), "Member must have num_expansion_bits if not bytesN"
-                expression_to_shl_then_or = yul_shr(
-                    r.expansion_bits_name.to_yul_identifier(),
-                    r.assembly_representation,
-                )
+            expression_to_shl_then_or: YulExpression = r.assembly_representation
 
             other_regions.append(
                 YulAssignment(
@@ -201,7 +191,7 @@ class UserDefinedValueType:
                     ),
                 )
             )
-        # remaining = "\n".join(other_regions)
+        # TODO: no bounds here?
         return FunctionDefinition(
             name=f"create{self.name}",
             parameters=ParameterList(

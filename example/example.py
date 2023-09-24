@@ -8,7 +8,10 @@ foo_member = Member(
 )
 bar_member = Member(name="bar", width_bits=31, bytesN=4, signed=False)
 baz_member = Member(name="baz", width_bits=69, bytesN=None, signed=False)
-members = [foo_member, bar_member, baz_member]
+qux_member = Member(
+    name="qux", width_bits=25, bytesN=None, signed=False, expansion_bits=1
+)
+members = [foo_member, bar_member, baz_member, qux_member]
 u = UserDefinedValueType.from_members(
     name="UDVT", members=members, value_type="uint256"
 )

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Iterable, Optional, TypeVar
+from typing import Iterable, Optional
+
 
 from packed_udvts.member import Member
 from sol_ast.ast import (
@@ -15,11 +16,15 @@ from sol_ast.ast import (
     ParameterList,
     Statement,
     TypeName,
+    UnaryOperation,
     VariableDeclaration,
+    VariableDeclarationStatement,
     YulAssignment,
     YulBlock,
     YulExpression,
+    YulExpressionStatement,
     YulStatement,
+    YulVariableDeclaration,
     yul_gt,
     yul_or,
     yul_and,
@@ -28,6 +33,8 @@ from sol_ast.ast import (
     yul_shr,
     yul_signextend,
     YulLiteral,
+    yul_iszero,
+    Expression,
 )
 from sol_ast.enums import (
     BinaryOperator,
@@ -35,6 +42,7 @@ from sol_ast.enums import (
     LiteralKind,
     Mutability,
     StateMutability,
+    UnaryOperator,
     Visibility,
 )
 
@@ -109,6 +117,8 @@ class Region:
 
     def compact_sign(self, value: YulExpression) -> YulExpression:
         """Compact the signed bit of this member"""
+        if not self.member.signed:
+            return value
         # OR the masked value with the compacted signed bit
         return yul_or(
             yul_shl(
@@ -145,6 +155,8 @@ class Region:
             return self.compact_sign(
                 self.compact_bits(self.member.shadowed_name.to_yul_identifier())
             )
+        elif self.expansion_bits_name is not None:
+            return self.compact_bits(self.member.shadowed_name.to_yul_identifier())
         else:
             return self.member.shadowed_name.to_yul_identifier()
 
@@ -156,21 +168,20 @@ class Region:
 
     def setter(self, udt_name: TypeName, typesafe: bool = True) -> FunctionDefinition:
         """Get the function body for the setter for this member"""
+        value_expression = self.member.shadowed_name.to_yul_identifier()
         if self.member.num_expansion_bits is not None:
             assert self.expansion_bits_name is not None
             value_expression = yul_shr(
                 self.expansion_bits_name.to_yul_identifier(),
-                self.member.shadowed_name.to_yul_identifier(),
+                value_expression,
             )
-        else:
-            if self.member.signed and self.member.width_bits != 256:
-                # mask signed values and use signextend later
-                value_expression = yul_and(
-                    self.member.shadowed_name.to_yul_identifier(),
-                    self.end_mask_name.to_yul_identifier(),
-                )
-            else:
-                value_expression = self.member.shadowed_name.to_yul_identifier()
+        if self.member.signed and self.member.width_bits != 256:
+            # mask signed values and use signextend later
+            value_expression = yul_and(
+                self.compact_sign(value_expression),
+                self.end_mask_name.to_yul_identifier(),
+            )
+
         if self.offset_bits:
             rhs = yul_shl(self.offset_bits_name.to_yul_identifier(), value_expression)
         else:
@@ -201,62 +212,57 @@ class Region:
         )
 
     @property
+    def empty_mask(self) -> Literal:
+        """Get the mask for the bits that should be empty given the number of shift bits"""
+        if not self.member.expansion_bits:
+            raise ValueError("Cannot get empty mask for non-expanded member")
+        return Literal(
+            value=hex(int("1" * self.member.expansion_bits, 2)),
+            kind=LiteralKind.HexNumber,
+        )
+
+    @property
+    def empty_mask_name(self) -> Optional[Identifier]:
+        """Get the name of the mask for the bits that should be empty given the number of shift bits"""
+        if not self.member.expansion_bits or self.member.bytesN:
+            return None
+        return Identifier(f"{self.member.name.upper()}_EMPTY_MASK")
+
+    def check_empty_region(self, value: YulExpression) -> Optional[YulExpression]:
+        """Get the assembly for checking if the empty bits are empty"""
+        if self.empty_mask_name is None:
+            return None
+        return yul_gt(
+            yul_and(
+                value,
+                self.empty_mask_name.to_yul_identifier(),
+            ),
+            YulLiteral("0"),
+        )
+
+    def check_signed_fits(self, value: YulExpression) -> YulExpression:
+        """Get the assembly for checking if the bits are compacted without the sign bit"""
+        return yul_gt(value, self.end_mask_name.to_yul_identifier())
+
+    def compacted(self):
+        bit_compacted = self.compact_bits(self.member.shadowed_name.to_yul_identifier())
+        sign_compacted = self.compact_sign(bit_compacted)
+        return sign_compacted
+
+    @property
     def typesafe_require(self) -> Iterable[Statement]:
         """Get the require statement for this member"""
         # TODO: very inefficient; optimize by reusing masked values
         initial_cast_statements: list[Statement] = []
         if self.member.bytesN is not None:
-            if self.member.num_expansion_bits:
-                initial_cast_statements: list[Statement] = [
-                    ExpressionStatement(
-                        VariableDeclaration(
-                            ElementaryTypeName("uint256"), Identifier("cast")
-                        )
-                    ),
-                    InlineAssembly(
-                        YulBlock(
-                            YulAssignment(
-                                YulIdentifier("cast"),
-                                value=yul_shr(
-                                    YulLiteral(str(self.member.num_expansion_bits)),
-                                    self.member.shadowed_name.to_yul_identifier(),
-                                ),
-                            )
-                        )
-                    ),
-                ]
-                require_predicate = BinaryOperation(
-                    Identifier("cast"),
-                    BinaryOperator.LessThanOrEqual,
-                    self.end_mask_name,
-                )
+            if self.expansion_bits_name:
+                return self.signed_typesafe_require()
             else:
                 return []
         elif self.member.signed:
-            initial_cast_statements = [
-                ExpressionStatement(
-                    VariableDeclaration(
-                        ElementaryTypeName("uint256"), Identifier("cast")
-                    )
-                ),
-                InlineAssembly(
-                    YulBlock(
-                        YulAssignment(
-                            YulIdentifier("cast"),
-                            value=yul_and(
-                                self.member.shadowed_name.to_yul_identifier(),
-                                self.end_mask_name.to_yul_identifier(),
-                            ),
-                        )
-                    )
-                ),
-            ]
-            require_predicate = BinaryOperation(
-                Identifier("cast"),
-                BinaryOperator.LessThanOrEqual,
-                # shift right to account for signed bit
-                BinaryOperation(self.end_mask_name, BinaryOperator.Shr, Literal("1")),
-            )
+            return self.signed_typesafe_require()
+        elif self.expansion_bits_name:
+            return self.expanded_typesafe_require()
         else:
             require_predicate = BinaryOperation(
                 self.member.shadowed_name,
@@ -264,19 +270,96 @@ class Region:
                 self.end_mask_name,
             )
         return initial_cast_statements + [
-            ExpressionStatement(
-                FunctionCall(
-                    Identifier("require"),
-                    kind=FunctionCallKind.FunctionCall,
-                    arguments=[
-                        require_predicate,
-                        Literal(
-                            f"{self.member.name} value too large", LiteralKind.String
-                        ),
-                    ],
-                )
-            )
+            self.assertion(
+                require_predicate,
+                Literal(f"{self.member.name} value too large", LiteralKind.String),
+            ),
         ]
+
+    def assertion(self, predicate: Expression, error: Expression) -> Statement:
+        return ExpressionStatement(
+            FunctionCall(
+                Identifier("require"),
+                kind=FunctionCallKind.FunctionCall,
+                arguments=[
+                    predicate,
+                    error,
+                ],
+            )
+        )
+
+    def signed_typesafe_require(self) -> list[Statement]:
+        if not (self.member.signed or self.member.bytesN):
+            raise ValueError("Cannot check sign of unsigned member")
+        err_name = Identifier("err")
+        err_var = VariableDeclaration(
+            type_name=ElementaryTypeName("bool"),
+            name=err_name,
+        )
+        err_buff = VariableDeclarationStatement(
+            [err_var],
+            initial_value=None,
+        )
+        assembly = InlineAssembly(YulBlock(*self.signed_check_assembly()))
+        predicate = UnaryOperation(
+            operator=UnaryOperator.Not,
+            prefix=True,
+            sub_expression=err_name,
+        )
+        error = Literal("Unsafe value", LiteralKind.String)
+        assertion = self.assertion(predicate, error)
+
+        return [err_buff, assembly, assertion]
+
+    def signed_check_assembly(self) -> list[YulStatement]:
+        if not (self.member.signed or self.member.bytesN):
+            raise ValueError("Cannot check sign of unsigned member")
+
+        empty_check: Optional[YulExpression] = self.check_empty_region(
+            self.member.shadowed_name.to_yul_identifier()
+        )
+        compacted_val = self.compact_bits(self.member.shadowed_name.to_yul_identifier())
+        # TODO: figure out how to pass compacted value down the line to avoid recomputing
+        var = YulIdentifier("compacted")
+        declaration = YulVariableDeclaration(var, value=compacted_val)
+        sign_check = self.check_signed_fits(var)
+        err = YulIdentifier("err")
+
+        if empty_check is not None:
+            err_value = yul_or(empty_check, sign_check)
+        else:
+            err_value = sign_check
+        err_assignment = YulAssignment(err, value=err_value)
+
+        return [declaration, err_assignment]
+
+    def expanded_typesafe_require(self) -> list[Statement]:
+        if not self.expansion_bits_name:
+            raise ValueError("Cannot check expansion of non-expanded member")
+        err_name = Identifier("err")
+        err_var = VariableDeclaration(
+            type_name=ElementaryTypeName("bool"),
+            name=err_name,
+        )
+        err_buff = VariableDeclarationStatement(
+            [err_var],
+            initial_value=None,
+        )
+
+        check = self.check_empty_region(self.member.shadowed_name.to_yul_identifier())
+        if check is None:
+            raise ValueError("Cannot check expansion of non-expanded member")
+        err_assign = YulAssignment(err_name.to_yul_identifier(), value=check)
+
+        assembly = InlineAssembly(YulBlock(err_assign))
+        predicate = UnaryOperation(
+            operator=UnaryOperator.Not,
+            prefix=True,
+            sub_expression=err_name,
+        )
+        error = Literal("Unsafe value", LiteralKind.String)
+        assertion = self.assertion(predicate, error)
+        return [err_buff, assembly, assertion]
 
     def getter(self, udt_name: TypeName, typesafe: bool = True) -> FunctionDefinition:
         """Get the function body for the getter for this member"""
@@ -347,6 +430,14 @@ class Region:
                     value=Literal(str(self.member.num_expansion_bits)),
                 )
                 if self.expansion_bits_name
+                else None,
+                VariableDeclaration(
+                    mutability=Mutability.Constant,
+                    type_name=ElementaryTypeName("uint256"),
+                    name=self.empty_mask_name,
+                    value=self.empty_mask,
+                )
+                if self.empty_mask_name
                 else None,
             ]
             if x
