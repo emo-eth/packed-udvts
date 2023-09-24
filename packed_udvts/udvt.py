@@ -15,14 +15,18 @@ from sol_ast.ast import (
     FunctionIdentifierPath,
     Identifier,
     InlineAssembly,
+    License,
     ParameterList,
+    PragmaDirective,
     SourceUnit,
     UserDefinedTypeName,
     UserDefinedValueTypeDefinition,
     UsingForDirective,
     VariableDeclaration,
+    VariableDeclarationStatement,
     YulAssignment,
     YulBlock,
+    Literal as SolLiteral,
     YulExpression,
     YulIdentifier,
     yul_shr,
@@ -30,7 +34,7 @@ from sol_ast.ast import (
     yul_shl,
     YulLiteral,
 )
-from sol_ast.enums import ContractKind, StateMutability
+from sol_ast.enums import ContractKind, LiteralKind, StateMutability
 
 # for packed UDVTs, only allow bytes32 and unsigned integers
 # bytesN are left-aligned, so right-aligned uints are preferable
@@ -178,10 +182,10 @@ class UserDefinedValueType:
                 expression_to_shl_then_or: YulExpression = r.assembly_representation
             else:
                 assert (
-                    r.member.num_expansion_bits is not None
+                    r.expansion_bits_name is not None
                 ), "Member must have num_expansion_bits if not bytesN"
                 expression_to_shl_then_or = yul_shr(
-                    YulLiteral(str(r.member.num_expansion_bits)),
+                    r.expansion_bits_name.to_yul_identifier(),
                     r.assembly_representation,
                 )
 
@@ -204,7 +208,7 @@ class UserDefinedValueType:
                 *(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)
             ),
             return_parameters=ParameterList(
-                VariableDeclaration(name="self", type_name=self.name)
+                VariableDeclaration(name=Identifier("self"), type_name=self.name)
             ),
             state_mutability=StateMutability.Pure,
             body=Block(InlineAssembly(YulBlock(initial_assigment, *other_regions))),
@@ -216,7 +220,7 @@ class UserDefinedValueType:
         return FunctionDefinition(
             name=f"unpack{self.name}",
             parameters=ParameterList(
-                VariableDeclaration(name="self", type_name=self.name)
+                VariableDeclaration(name=Identifier("self"), type_name=self.name)
             ),
             return_parameters=ParameterList(
                 *(m.get_shadowed_declaration(typesafe=typesafe) for m in self.regions)
@@ -231,9 +235,14 @@ class UserDefinedValueType:
 
     def library_declaration(self, typesafe: bool = True) -> ContractDefinition:
         """Get the library declaration for this UDVT"""
-        constants_declarations: Iterable[VariableDeclaration] = chain(
-            *(r.get_constant_declarations() for r in self.regions)
+        constants_declarations: Iterable[VariableDeclarationStatement] = chain(
+            (
+                VariableDeclarationStatement(assignments=[v], initial_value=None)
+                for r in self.regions
+                for v in r.get_constant_declarations()
+            )
         )
+
         return ContractDefinition(
             *constants_declarations,
             self.create_declaration(typesafe=typesafe),
@@ -247,10 +256,11 @@ class UserDefinedValueType:
     def render_file(self, typesafe: bool = True) -> SourceUnit:
         """Render the file for this UDVT"""
         return SourceUnit(
+            PragmaDirective(["solidity", "^0.8.20"]),
             self.type_declaration,
             self.using_declaration,
             self.library_declaration(typesafe=typesafe),
-            license="// SPDX-License-Identifier: MIT",
+            license=License("MIT"),
         )
 
     @property
@@ -261,7 +271,7 @@ class UserDefinedValueType:
     @property
     def declaration(self) -> VariableDeclaration:
         """Get the declaration for this UDVT"""
-        return VariableDeclaration(type_name=self.name, name=self.var_name.name)
+        return VariableDeclaration(type_name=self.name, name=self.var_name)
 
     @property
     def lib_name(self) -> Identifier:

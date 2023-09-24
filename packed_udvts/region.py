@@ -1,9 +1,6 @@
-from ast import Expression
 from dataclasses import dataclass
-from pyclbr import Function
-from typing import Iterable, Optional
+from typing import Iterable, Optional, TypeVar
 
-from numpy import block
 from packed_udvts.member import Member
 from sol_ast.ast import (
     BinaryOperation,
@@ -36,6 +33,7 @@ from sol_ast.enums import (
     BinaryOperator,
     FunctionCallKind,
     LiteralKind,
+    Mutability,
     StateMutability,
     Visibility,
 )
@@ -81,6 +79,11 @@ class Region:
         return Literal(value=hex(mask), kind=LiteralKind.HexNumber)
 
     @property
+    def width_bits(self) -> Literal:
+        """Get the width of this member in bits"""
+        return Literal(value=str(self.member.width_bits), kind=LiteralKind.Number)
+
+    @property
     def not_mask_name(self) -> Identifier:
         """Get the name of the 256-bit not-mask for this member; it should have 0 bits where the member is, and 1 bits everywhere else
         It should return a string
@@ -100,35 +103,55 @@ class Region:
         return Identifier(f"{self.member.name.upper()}_EXPANSION_BITS")
 
     @property
+    def width_bits_name(self) -> Identifier:
+        """Get the name of the width bits for this member; it should return a string"""
+        return Identifier(f"{self.member.name.upper()}_WIDTH_BITS")
+
+    def compact_sign(self, value: YulExpression) -> YulExpression:
+        """Compact the signed bit of this member"""
+        # OR the masked value with the compacted signed bit
+        return yul_or(
+            yul_shl(
+                # if it is, shift it all the way to the left of the member. if it's 0, this does nothing
+                YulLiteral(str(self.member.width_bits - 1)),
+                # if the member is signed, the 256th bit is set
+                # this needs to be "compacted" down into the member's width
+                # test if it is greater than end mask, ie, signed
+                yul_gt(
+                    value,
+                    self.end_mask_name.to_yul_identifier(),
+                ),
+            ),
+            # mask the signed bit out of the member
+            yul_and(
+                value,
+                self.end_mask_name.to_yul_identifier(),
+            ),
+        )
+
+    def compact_bits(self, value: YulExpression) -> YulExpression:
+        """Compact the expansion bits of this member"""
+        if self.expansion_bits_name is None:
+            return value
+        return yul_shr(
+            self.expansion_bits_name.to_yul_identifier(),
+            value,
+        )
+
+    @property
     def assembly_representation(self) -> YulExpression:
         """Get the assembly representation of this member"""
         if self.member.signed:
-            # if the member is signed, the 256th bit is set
-            # this needs to be "compacted" down into the member's width
-            # first test if it is greater than end mask, ie, signed
-            signed_test = yul_gt(
-                self.member.shadowed_name.to_yul_identifier(),
-                self.end_mask_name.to_yul_identifier(),
+            return self.compact_sign(
+                self.compact_bits(self.member.shadowed_name.to_yul_identifier())
             )
-            # if it is, shift it all the way to the left of the member. if it's 0, this does nothing
-            compact_signed_bit = yul_shl(
-                YulLiteral(str(self.member.width_bits - 1)), signed_test
-            )
-            # mask the signed bit out of the member
-            masked_value = yul_and(
-                self.member.shadowed_name.to_yul_identifier(),
-                self.end_mask_name.to_yul_identifier(),
-            )
-            # OR the masked value with the compacted signed bit
-            return yul_or(compact_signed_bit, masked_value)
-
         else:
             return self.member.shadowed_name.to_yul_identifier()
 
     def get_shadowed_declaration(self, typesafe: bool = True) -> VariableDeclaration:
         """Get the shadowed declaration for this member"""
         return VariableDeclaration(
-            type_name=self.member.typestr(typesafe), name=self.member.shadowed_name.name
+            type_name=self.member.typestr(typesafe), name=self.member.shadowed_name
         )
 
     def setter(self, udt_name: TypeName, typesafe: bool = True) -> FunctionDefinition:
@@ -166,23 +189,16 @@ class Region:
         return FunctionDefinition(
             name=f"set{self.member.title}",
             parameters=ParameterList(
-                VariableDeclaration(type_name=udt_name, name="self"),
+                VariableDeclaration(type_name=udt_name, name=Identifier("self")),
                 self.get_shadowed_declaration(typesafe),
             ),
             return_parameters=ParameterList(
-                VariableDeclaration(type_name=udt_name, name="updated")
+                VariableDeclaration(type_name=udt_name, name=Identifier("updated"))
             ),
             visibility=Visibility.Internal,
             state_mutability=StateMutability.Pure,
             body=statements,
         )
-        return f"""
-function set{self.member.title}({udt_name} self, {self.member.typestr(typesafe)} {self.member.shadowed_name}) internal pure returns ({udt_name} updated) {{
-{self.typesafe_require if typesafe and not self.member.custom_typestr else ""}
-assembly {{
-updated := or({masked_lhs}, {rhs})
-}}
-}}"""
 
     @property
     def typesafe_require(self) -> Iterable[Statement]:
@@ -191,9 +207,11 @@ updated := or({masked_lhs}, {rhs})
         initial_cast_statements: list[Statement] = []
         if self.member.bytesN is not None:
             if self.member.num_expansion_bits:
-                initial_cast_statements = [
+                initial_cast_statements: list[Statement] = [
                     ExpressionStatement(
-                        VariableDeclaration(ElementaryTypeName("uint256"), "cast")
+                        VariableDeclaration(
+                            ElementaryTypeName("uint256"), Identifier("cast")
+                        )
                     ),
                     InlineAssembly(
                         YulBlock(
@@ -217,7 +235,9 @@ updated := or({masked_lhs}, {rhs})
         elif self.member.signed:
             initial_cast_statements = [
                 ExpressionStatement(
-                    VariableDeclaration(ElementaryTypeName("uint256"), "cast")
+                    VariableDeclaration(
+                        ElementaryTypeName("uint256"), Identifier("cast")
+                    )
                 ),
                 InlineAssembly(
                     YulBlock(
@@ -263,12 +283,12 @@ updated := or({masked_lhs}, {rhs})
         return FunctionDefinition(
             name=f"get{self.member.title}",
             parameters=ParameterList(
-                VariableDeclaration(type_name=udt_name, name="self")
+                VariableDeclaration(type_name=udt_name, name=Identifier("self"))
             ),
             return_parameters=ParameterList(
                 VariableDeclaration(
                     type_name=self.member.typestr(typesafe),
-                    name=self.member.shadowed_name.name,
+                    name=self.member.shadowed_name,
                 )
             ),
             state_mutability=StateMutability.Pure,
@@ -287,21 +307,12 @@ updated := or({masked_lhs}, {rhs})
             expression_to_mask = yul_shr(
                 self.offset_bits_name.to_yul_identifier(), YulIdentifier("self")
             )
-        masked_expression = yul_and(
-            expression_to_mask, self.end_mask_name.to_yul_identifier()
-        )
+        rhs = yul_and(expression_to_mask, self.end_mask_name.to_yul_identifier())
         if self.member.num_expansion_bits:
             assert self.expansion_bits_name is not None
-            rhs = yul_shl(
-                self.expansion_bits_name.to_yul_identifier(), masked_expression
-            )
-        else:
-            if self.member.signed and self.member.width_bits != 256:
-                rhs = yul_signextend(
-                    YulLiteral(str(self.member.ceil_bytes - 1)), masked_expression
-                )
-            else:
-                rhs = masked_expression
+            rhs = yul_shl(self.expansion_bits_name.to_yul_identifier(), rhs)
+        if self.member.signed and self.member.width_bits != 256:
+            rhs = yul_signextend(YulLiteral(str(self.member.ceil_bytes - 1)), rhs)
         return YulAssignment(self.member.shadowed_name.to_yul_identifier(), value=rhs)
 
     def get_constant_declarations(self) -> list[VariableDeclaration]:
@@ -310,29 +321,29 @@ updated := or({masked_lhs}, {rhs})
             x
             for x in [
                 VariableDeclaration(
-                    constant=True,
+                    mutability=Mutability.Constant,
                     type_name=ElementaryTypeName("uint256"),
-                    name=self.end_mask_name.name,
+                    name=self.end_mask_name,
                     value=self.end_mask,
                 ),
                 VariableDeclaration(
-                    constant=True,
+                    mutability=Mutability.Constant,
                     type_name=ElementaryTypeName("uint256"),
-                    name=self.not_mask_name.name,
+                    name=self.not_mask_name,
                     value=self.not_mask,
                 ),
                 VariableDeclaration(
-                    constant=True,
+                    mutability=Mutability.Constant,
                     type_name=ElementaryTypeName("uint256"),
-                    name=self.offset_bits_name.name,
+                    name=self.offset_bits_name,
                     value=Literal(str(self.offset_bits)),
                 )
                 if self.offset_bits
                 else None,
                 VariableDeclaration(
-                    constant=True,
+                    mutability=Mutability.Constant,
                     type_name=ElementaryTypeName("uint256"),
-                    name=self.expansion_bits_name.name,
+                    name=self.expansion_bits_name,
                     value=Literal(str(self.member.num_expansion_bits)),
                 )
                 if self.expansion_bits_name

@@ -129,7 +129,7 @@ ContractDefinitionPart: TypeAlias = Union[
     "StructDefinition",
     "UserDefinedValueTypeDefinition",
     "UsingForDirective",
-    "VariableDeclaration",
+    "VariableDeclarationStatement",
 ]
 
 SourceUnitPart: TypeAlias = Union[
@@ -143,6 +143,7 @@ SourceUnitPart: TypeAlias = Union[
     "StructDefinition",
     "UserDefinedValueTypeDefinition",
     "ContractDefinition",
+    "License",
 ]
 
 BlockType: TypeAlias = Union[
@@ -285,7 +286,7 @@ class PragmaDirective(AstNode):
         self.literals = literals
 
     def fmt(self) -> str:
-        return f"pragma {self.literals[0]} {self.literals[1]}"
+        return f"pragma {self.literals[0]} {self.literals[1]};"
 
 
 class ImportDirective(AstNode):
@@ -318,11 +319,11 @@ class ImportDirective(AstNode):
 
     def fmt(self) -> str:
         from_clause = (
-            f'{{{", ".join([s.fmt() for s in self.symbol_aliases])} from}}'
+            f'{{{", ".join([s.fmt() for s in self.symbol_aliases])}}} from'
             if self.symbol_aliases
             else ""
         )
-        return f"import {from_clause} {self.absolute_path};"
+        return f"import {from_clause} '{self.absolute_path}';"
 
 
 class IdentifierPath(AstNode):
@@ -714,7 +715,7 @@ class OverrideSpecifier(AstNode):
 
 
 class VariableDeclaration(AstNode):
-    name: Optional[str]
+    name: Identifier
     name_location: Optional[SourceLocation]
     base_functions: list[AstId]
     constant: bool
@@ -722,7 +723,7 @@ class VariableDeclaration(AstNode):
     documentation: Optional[StructuredDocumentation]
     function_selector: Optional[str]
     indexed: bool
-    _mutability: Optional[Mutability]
+    mutability: Mutability
     overrides: Optional[OverrideSpecifier]
     scope: Optional[AstId]
     storage_location: Optional[StorageLocation]
@@ -734,15 +735,14 @@ class VariableDeclaration(AstNode):
     def __init__(
         self,
         type_name: "TypeName",
-        name: Optional[str],
+        name: Identifier,
         name_location: Optional[SourceLocation] = None,
         base_functions: list[AstId] = [],
-        constant: bool = False,
         state_variable: bool = False,
         documentation: Optional[StructuredDocumentation] = None,
         function_selector: Optional[str] = None,
         indexed: bool = False,
-        mutability: Optional[Mutability] = Mutability.Mutable,
+        mutability: Mutability = Mutability.Mutable,
         overrides: Optional[OverrideSpecifier] = None,
         scope: Optional[AstId] = None,
         storage_location: Optional[StorageLocation] = None,
@@ -754,12 +754,11 @@ class VariableDeclaration(AstNode):
         self.name = name
         self.name_location = name_location
         self.base_functions = base_functions
-        self.constant = constant
         self.state_variable = state_variable
         self.documentation = documentation
         self.function_selector = function_selector
         self.indexed = indexed
-        self._mutability = mutability
+        self.mutability = mutability
         self.overrides = overrides
         self.scope = scope
         self.storage_location = storage_location
@@ -768,19 +767,20 @@ class VariableDeclaration(AstNode):
         self.value = value
         self.visibility = visibility
 
-    @property
-    def mutability(self) -> Mutability:
-        if self._mutability:
-            return self._mutability
-        if self.constant:
-            return Mutability.Constant
-        if self.state_variable:
-            return Mutability.Mutable
-        raise Unreachable()
-
     def fmt(self) -> str:
-        qualifier = self.indexed or self.storage_location or self.mutability.value
-        components = [self.type_name.fmt(), qualifier, self.name or ""]
+        qualifier = (
+            ("indexed" if self.indexed else "")
+            or (self.storage_location.value if self.storage_location else None)
+            or self.mutability.value
+        )
+        if isinstance(self.name, str):
+            pass
+        components: list[Optional[str]] = [
+            self.type_name.fmt(),
+            qualifier,
+            self.name.fmt(),
+            f" = {self.value.fmt()}" if self.value else "",
+        ]
         return " ".join(c for c in components if c)
 
 
@@ -859,10 +859,18 @@ class UsingForDirective(AstNode):
         return f"{using_clause} {for_clause} {global_clause}"
 
 
+class License(Literal):
+    def __init__(self, value: str):
+        super().__init__(value, LiteralKind.String)
+
+    def fmt(self) -> str:
+        return f"// SPDX-License-Identifier: {self.value}"
+
+
 class SourceUnit(AstNode):
     absolute_path: Optional[str]
     exported_symbols: dict[str, list[AstId]]
-    license: Optional[str]
+    license: Optional[License]
     nodes: list["SourceUnitPart"]
 
     def __init__(
@@ -870,7 +878,7 @@ class SourceUnit(AstNode):
         *nodes: "SourceUnitPart",
         absolute_path: Optional[str] = None,
         exported_symbols: dict[str, list[AstId]] = {},
-        license: Optional[str] = None,
+        license: Optional[License] = None,
     ):
         super().__init__()
         self.absolute_path = absolute_path
@@ -879,6 +887,8 @@ class SourceUnit(AstNode):
         self.nodes = list(nodes)
 
     def fmt(self) -> str:
+        if self.license:
+            self.nodes = [self.license] + self.nodes
         return "\n".join(node.fmt() for node in self.nodes)
 
 

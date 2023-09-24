@@ -126,7 +126,7 @@ class Member:
     @property
     def ceil_bytes(self) -> int:
         """Get the number of whole bytes necessary to represent this member"""
-        return ceil(self.width_bits / 8)
+        return ceil((self.width_bits + (self.expansion_bits or 0)) / 8)
 
     @property
     def unsafe_typestr(self) -> TypeName:
@@ -138,14 +138,12 @@ class Member:
     @property
     def declaration(self) -> VariableDeclaration:
         """Get the declaration of this member"""
-        return VariableDeclaration(type_name=self.safe_typestr, name=self.name)
+        return VariableDeclaration(type_name=self.safe_typestr, name=self.identifier)
 
     @property
     def shadowed_declaration(self) -> VariableDeclaration:
         """Get the shadowed declaration of this member"""
-        return VariableDeclaration(
-            type_name=self.safe_typestr, name=self.shadowed_name.name
-        )
+        return VariableDeclaration(type_name=self.safe_typestr, name=self.shadowed_name)
 
     @property
     def num_expansion_bits(self) -> Optional[int]:
@@ -169,9 +167,9 @@ class Member:
         if self.bytesN:
             raise ValueError("Cannot get lower bound of bytesN member")
         if not self.signed:
-            return Literal(str(0))
+            return Literal(hex(0))
         else:
-            return Literal(str(-1 * (2 ** (self.width_bits - 1))))
+            return Literal(hex(-1 * (2 ** (self.width_bits - 1))))
 
     def get_upper_bound(self) -> Literal:
         """Get the upper bound of this member"""
@@ -179,18 +177,20 @@ class Member:
             raise ValueError("Cannot get upper bound of bytesN member")
         if not self.signed:
             x: int = 2**self.width_bits - 1
-            return Literal(str(x))
+            return Literal(hex(x))
         else:
             x: int = 2 ** (self.width_bits - 1) - 1
-            return Literal(str(x))
+            return Literal(hex(x))
 
     def get_truncated_bytesN_mask(self) -> Literal:
         """Get the mask to truncate bytesN members"""
-        if self.bytesN is None:
-            raise ValueError("Cannot get truncated bytesN mask of non-bytesN member")
+        if self.bytesN is None and self.expansion_bits is None:
+            raise ValueError(
+                "Cannot get truncated bytesN mask of non-bytesN member without expansion bits"
+            )
         max_numeric_value: int = 2 ** (self.width_bits) - 1
         # shift upper_mask to the left by the number of expansion bits
-        return Literal(str(max_numeric_value << (self.num_expansion_bits or 0)))
+        return Literal(hex(max_numeric_value << (self.num_expansion_bits or 0)))
 
     def get_bounds(
         self, name: Optional[Identifier] = None
@@ -199,7 +199,7 @@ class Member:
             name = self.identifier
         if self.custom_typestr:
             raise ValueError("Cannot get bound string of UDVT")
-        if self.bytesN is None:
+        if self.bytesN is None and self.expansion_bits is None:
             return Assignment(
                 lhs=name,
                 rhs=FunctionCall(

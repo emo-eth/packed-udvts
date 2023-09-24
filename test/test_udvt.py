@@ -85,6 +85,3 @@ _baz := and(shr(BAZ_OFFSET, self), _69_BIT_END_MASK)
     # def test_render_file(self):
     #     render_file = f"""pragma solidity ^0.8.0;"""
     #     self.assertEqual(self.u.render_file(typesafe=True), render_file)
-
-
-print(u.render_file(typesafe=True))

@@ -10,6 +10,7 @@ from sol_ast.ast import (
     Identifier,
     ImportDirective,
     InheritanceSpecifier,
+    License,
     Literal,
     MemberAccess,
     ParameterList,
@@ -71,9 +72,7 @@ class TestGen:
         lhs = [self.updated_udvt_var_name()]
         if redeclare:
             lhs = [
-                VariableDeclaration(
-                    self.udvt.name, name=self.updated_udvt_var_name.fmt()
-                )
+                VariableDeclaration(self.udvt.name, name=self.updated_udvt_var_name())
             ]
 
         return VariableDeclarationStatement(
@@ -90,6 +89,9 @@ class TestGen:
 
     def fuzz_get_set_region(self, region: Region) -> FunctionDefinition:
         updated_member_var_name = Identifier(f"updated{region.member.title}")
+        updated_declaration = VariableDeclaration(
+            region.member.safe_typestr, updated_member_var_name
+        )
 
         all_region_bounds = chain(
             (r.member.get_bounds() for r in self.udvt.regions),
@@ -98,9 +100,7 @@ class TestGen:
 
         declaration = VariableDeclarationStatement(
             assignments=[
-                VariableDeclaration(
-                    type_name=self.udvt.name, name=self.udvt.var_name.fmt()
-                )
+                VariableDeclaration(type_name=self.udvt.name, name=self.udvt.var_name)
             ],
             initial_value=FunctionCall(
                 expression=MemberAccess(
@@ -120,7 +120,9 @@ class TestGen:
             )
             for r in self.udvt.regions
         )
-        update_region = self.update_region(region, updated_member_var_name)
+        update_region = self.update_region(
+            region, updated_member_var_name, redeclare=True
+        )
 
         post_update_non_updated_asserts = (
             self.assert_eq(
@@ -146,7 +148,7 @@ class TestGen:
             f"testGetSet{region.member.title}",
             visibility=Visibility.Public,
             parameters=ParameterList(
-                *(r.member.declaration for r in self.udvt.regions)
+                *(r.member.declaration for r in self.udvt.regions), updated_declaration
             ),
             body=Block(
                 *to_statements(
@@ -159,7 +161,7 @@ class TestGen:
             ),
         )
 
-    def generate(self):
+    def generate(self) -> SourceUnit:
         functions = (self.fuzz_get_set_region(r) for r in self.udvt.regions)
         pragma = PragmaDirective(literals=["solidity", "^0.8.20"])
 
@@ -190,5 +192,5 @@ class TestGen:
             test_import,
             lib_and_udvt_import,
             contract_def,
-            license="// SPDX-License-Identifier: MIT",
+            license=License("MIT"),
         )

@@ -1,33 +1,37 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 type UDVT is uint256;
 
 using UDVTType for UDVT global;
 
 library UDVTType {
-    uint256 constant BAR_EXPANSION_BITS = 224;
+    uint256 constant _8_BIT_END_MASK = 0xff;
+    uint256 constant FOO_NOT_MASK = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00;
+    uint256 constant FOO_EXPANSION_BITS = 10;
+    uint256 constant _31_BIT_END_MASK = 0x7fffffff;
     uint256 constant BAR_NOT_MASK = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffff80000000ff;
     uint256 constant BAR_OFFSET = 8;
+    uint256 constant BAR_EXPANSION_BITS = 224;
+    uint256 constant _69_BIT_END_MASK = 0x1fffffffffffffffff;
     uint256 constant BAZ_NOT_MASK = 0xfffffffffffffffffffffffffffffffffffff000000000000000007fffffffff;
     uint256 constant BAZ_OFFSET = 39;
-    uint256 constant FOO_EXPANSION_BITS = 10;
-    uint256 constant FOO_NOT_MASK = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00;
-    uint256 constant _31_BIT_END_MASK = 0x7fffffff;
-    uint256 constant _69_BIT_END_MASK = 0x1fffffffffffffffff;
-    uint256 constant _8_BIT_END_MASK = 0xff;
 
     function createUDVT(int24 _foo, bytes4 _bar, uint72 _baz) internal pure returns (UDVT self) {
         assembly {
-            self := or(shl(7, gt(_foo, _8_BIT_END_MASK)), and(_foo, _8_BIT_END_MASK))
-            self := or(self, shl(BAR_OFFSET, shr(224, _bar)))
+            self :=
+                or(
+                    shl(7, gt(shr(FOO_EXPANSION_BITS, _foo), _8_BIT_END_MASK)),
+                    and(shr(FOO_EXPANSION_BITS, _foo), _8_BIT_END_MASK)
+                )
+            self := or(self, shl(BAR_OFFSET, shr(BAR_EXPANSION_BITS, _bar)))
             self := or(self, shl(BAZ_OFFSET, _baz))
         }
     }
 
     function unpackUDVT(UDVT self) internal pure returns (int24 _foo, bytes4 _bar, uint72 _baz) {
         assembly {
-            _foo := shl(FOO_EXPANSION_BITS, and(self, _8_BIT_END_MASK))
+            _foo := signextend(2, shl(FOO_EXPANSION_BITS, and(self, _8_BIT_END_MASK)))
             _bar := shl(BAR_EXPANSION_BITS, and(shr(BAR_OFFSET, self), _31_BIT_END_MASK))
             _baz := and(shr(BAZ_OFFSET, self), _69_BIT_END_MASK)
         }
@@ -35,7 +39,7 @@ library UDVTType {
 
     function getFoo(UDVT self) internal pure returns (int24 _foo) {
         assembly {
-            _foo := shl(FOO_EXPANSION_BITS, and(self, _8_BIT_END_MASK))
+            _foo := signextend(2, shl(FOO_EXPANSION_BITS, and(self, _8_BIT_END_MASK)))
         }
     }
 
@@ -56,7 +60,7 @@ library UDVTType {
         assembly {
             cast := and(_foo, _8_BIT_END_MASK)
         }
-        require(cast <= _8_BIT_END_MASK, "foo value too large");
+        require(cast <= (_8_BIT_END_MASK >> (1)), "foo value too large");
         assembly {
             updated := or(and(self, FOO_NOT_MASK), shr(FOO_EXPANSION_BITS, _foo))
         }
@@ -67,7 +71,7 @@ library UDVTType {
         assembly {
             cast := shr(224, _bar)
         }
-        require(true, "bar value too large");
+        require(cast <= _31_BIT_END_MASK, "bar value too large");
         assembly {
             updated := or(and(self, BAR_NOT_MASK), shl(BAR_OFFSET, shr(BAR_EXPANSION_BITS, _bar)))
         }

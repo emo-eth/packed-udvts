@@ -17,12 +17,17 @@ tg = TestGen(u)
 # typesafe=True by default
 # print(u.render_file())
 
-with open("src/UDVTType.sol", "w") as f:
-    f.write(u.render_file())
+# make src/lib folder if not exists
+import os
+
+os.makedirs("src/lib", exist_ok=True)
+
+with open("src/lib/UDVTType.sol", "w") as f:
+    f.write(u.render_file().fmt())
 
 
 with open("test/foundry/UDVT.t.sol", "w") as f:
-    f.write(tg.generate())
+    f.write(tg.generate().fmt())
 
 # print(u.render_file(typesafe=False))
 
